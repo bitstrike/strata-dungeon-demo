@@ -1,0 +1,1956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>DUNGEON TORCHLIGHT — a first-person maze crawler</title>
+<style>
+  :root{
+    --amber:#e8a33d;
+    --amber-dim:#8a5f22;
+    --ember:#ff7a1f;
+    --bone:#d9cfbc;
+    --bone-dim:#8b8274;
+    --ink:#07070a;
+    --ink-2:#0d0d12;
+    --panel:rgba(14,13,17,.86);
+    --rule:rgba(232,163,61,.22);
+    --cold:#7fb6ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--ink);color:var(--bone)}
+  body{
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  canvas{display:block}
+
+  /* ---------------------------------------------------------------- scene */
+  #gl,#veil{position:fixed;inset:0;width:100%;height:100%}
+  #veil{pointer-events:none;z-index:3}
+
+  /* ------------------------------------------------------------------ hud */
+  #hud{position:fixed;inset:0;z-index:4;pointer-events:none}
+  .hud-top{
+    position:absolute;top:0;left:0;right:0;display:flex;align-items:center;
+    gap:18px;padding:14px 18px;
+    background:linear-gradient(180deg,rgba(0,0,0,.72),rgba(0,0,0,0));
+  }
+  .sigil{
+    font-size:13px;letter-spacing:.34em;text-transform:uppercase;color:var(--amber);
+    text-shadow:0 0 18px rgba(232,163,61,.45);
+  }
+  .stat{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--bone-dim)}
+  .stat b{color:var(--bone);font-weight:600;letter-spacing:.06em}
+  .spacer{flex:1}
+  .compass{
+    width:150px;height:16px;position:relative;overflow:hidden;
+    border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+  }
+  .compass #compassTicks{position:absolute;inset:0}
+  .compass .tick{
+    position:absolute;top:0;bottom:0;width:1px;background:rgba(217,207,188,.35);
+  }
+  .compass .tick.major{background:rgba(217,207,188,.62)}
+  .compass .tick span{
+    position:absolute;top:15px;left:50%;transform:translateX(-50%);
+    font-size:9px;letter-spacing:.1em;color:var(--bone-dim);
+  }
+  .compass .needle{
+    position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;margin-left:-1px;
+    background:var(--amber);box-shadow:0 0 12px var(--amber);
+  }
+  .compass .lbl{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:11px;letter-spacing:.3em;color:var(--amber);
+    text-shadow:0 0 10px rgba(0,0,0,.9);
+  }
+
+  .hud-bottom{
+    position:absolute;left:0;right:0;bottom:0;display:flex;align-items:flex-end;
+    gap:20px;padding:16px 18px;
+    background:linear-gradient(0deg,rgba(0,0,0,.74),rgba(0,0,0,0));
+  }
+  .torch-meter{width:210px}
+  .torch-meter .cap{
+    font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--amber-dim);
+    margin-bottom:6px;
+  }
+  .bar{height:5px;background:rgba(255,255,255,.07);position:relative;overflow:hidden}
+  .bar i{
+    position:absolute;inset:0 auto 0 0;
+    background:linear-gradient(90deg,var(--ember),var(--amber));
+    box-shadow:0 0 14px rgba(255,122,31,.6);
+    transition:width .18s linear;
+  }
+  #prompt{
+    position:absolute;left:50%;bottom:112px;transform:translateX(-50%);
+    font-size:14px;letter-spacing:.2em;text-transform:uppercase;
+    padding:9px 18px;border:1px solid var(--rule);background:var(--panel);
+    color:var(--bone);opacity:0;transition:opacity .22s;
+    backdrop-filter:blur(6px);white-space:nowrap;
+  }
+  #prompt.on{opacity:1}
+  #toast{
+    position:absolute;left:50%;top:22%;transform:translate(-50%,-8px);
+    font-size:19px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber);
+    text-shadow:0 0 26px rgba(232,163,61,.5);opacity:0;transition:opacity .4s;
+    max-width:70vw;text-align:center;
+  }
+  #toast.on{opacity:1;transform:translate(-50%,0)}
+
+  #minimap{
+    position:absolute;right:18px;bottom:18px;
+    border:1px solid var(--rule);background:rgba(0,0,0,.55);
+    box-shadow:0 0 40px rgba(0,0,0,.8);
+  }
+
+  /* ------------------------------------------------------------- overlays */
+  .overlay{
+    position:fixed;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(120% 90% at 50% 40%,rgba(24,18,10,.92),rgba(4,4,6,.99));
+  }
+  .overlay.hidden{display:none}
+  .card{
+    width:min(760px,92vw);padding:34px 38px;border:1px solid var(--rule);
+    background:linear-gradient(180deg,rgba(20,17,13,.94),rgba(9,9,12,.96));
+    box-shadow:0 40px 120px rgba(0,0,0,.75),inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  h1{
+    font-size:clamp(30px,5.4vw,52px);font-weight:600;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--bone);line-height:1.05;
+  }
+  h1 span{color:var(--amber);display:block;font-size:.44em;letter-spacing:.42em;margin-top:12px}
+  .lede{margin-top:18px;font-size:15px;line-height:1.75;color:var(--bone-dim);max-width:62ch}
+  .lede b{color:var(--bone);font-weight:600}
+  .glyphs{
+    margin-top:20px;display:flex;flex-wrap:wrap;gap:10px 22px;font-size:13px;color:var(--bone-dim);
+  }
+  .glyphs i{font-style:normal;color:var(--amber);font-size:17px;margin-right:7px}
+  .row{display:flex;gap:14px;align-items:center;margin-top:26px;flex-wrap:wrap}
+  button{
+    font:inherit;font-size:13px;letter-spacing:.24em;text-transform:uppercase;
+    padding:13px 26px;border:1px solid var(--amber-dim);background:transparent;color:var(--amber);
+    cursor:pointer;transition:.18s;
+  }
+  button:hover{background:rgba(232,163,61,.13);border-color:var(--amber);box-shadow:0 0 26px rgba(232,163,61,.22)}
+  button.ghost{border-color:rgba(217,207,188,.22);color:var(--bone-dim)}
+  button.ghost:hover{background:rgba(217,207,188,.07);border-color:var(--bone-dim);box-shadow:none}
+  #drop{
+    margin-top:22px;padding:20px;border:1px dashed rgba(232,163,61,.34);
+    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    font-size:13px;color:var(--bone-dim);transition:.18s;
+  }
+  #drop.hot{border-color:var(--amber);background:rgba(232,163,61,.08)}
+  #drop b{color:var(--bone)}
+  #file{display:none}
+  .fine{margin-top:16px;font-size:12px;color:#5f5a52;letter-spacing:.06em;line-height:1.7}
+  .err{color:#ff6a5a;font-size:13px;margin-top:12px;letter-spacing:.06em}
+
+  /* -------------------------------------------------------------- settings */
+  #settings{z-index:9;background:rgba(4,4,6,.82);backdrop-filter:blur(10px)}
+  #settings .card{width:min(900px,94vw);max-height:88vh;overflow:auto}
+  h2{font-size:15px;letter-spacing:.34em;text-transform:uppercase;color:var(--amber);margin-bottom:6px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:22px 34px;margin-top:22px}
+  .field label{
+    display:flex;justify-content:space-between;align-items:baseline;
+    font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--bone-dim);
+  }
+  .field label output{color:var(--amber);letter-spacing:.1em;font-size:12px}
+  .field .hint{font-size:11px;color:#5f5a52;margin-top:5px;line-height:1.6}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;margin-top:8px;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:rgba(217,207,188,.22)}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:13px;height:13px;margin-top:-6px;border-radius:50%;
+    background:var(--amber);box-shadow:0 0 14px rgba(232,163,61,.6);cursor:pointer;
+  }
+  input[type=range]::-moz-range-track{height:2px;background:rgba(217,207,188,.22)}
+  input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radius:50%;background:var(--amber);cursor:pointer}
+  .toggle{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:12px;color:var(--bone-dim);letter-spacing:.14em;text-transform:uppercase;cursor:pointer}
+  .toggle input{accent-color:var(--amber);width:15px;height:15px}
+  .keys{margin-top:26px;display:flex;flex-wrap:wrap;gap:8px 18px;font-size:12px;color:var(--bone-dim)}
+  .keys kbd{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
+    border:1px solid rgba(217,207,188,.26);padding:3px 7px;color:var(--bone);background:rgba(255,255,255,.04);
+  }
+  #fade{position:fixed;inset:0;z-index:7;background:#000;opacity:0;pointer-events:none;transition:opacity .45s}
+  #fade.on{opacity:1}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="veil"></canvas>
+
+<div id="hud">
+  <div class="hud-top">
+    <div class="sigil">Torchlight</div>
+    <div class="stat">Depth <b id="sDepth">1</b></div>
+    <div class="stat">Torch <b id="sTorch">3</b>·<b id="sWall">2</b></div>
+    <div class="stat">Charted <b id="sSeen">0</b></div>
+    <div class="stat">Doors <b id="sDoors">0</b></div>
+    <div class="spacer"></div>
+    <div class="compass"><div id="compassTicks"></div><div class="needle" id="needle"></div><div class="lbl" id="cardinal">N</div></div>
+    <div class="stat"><b id="sFps">60</b> fps</div>
+  </div>
+  <div id="toast"></div>
+  <div id="prompt"></div>
+  <div class="hud-bottom">
+    <div class="torch-meter">
+      <div class="cap">Flame reach</div>
+      <div class="bar"><i id="torchBar" style="width:100%"></i></div>
+    </div>
+    <div class="stat" id="sPos">x 7 · y 7</div>
+    <div class="spacer"></div>
+    <canvas id="minimap" width="220" height="220"></canvas>
+  </div>
+</div>
+
+<div id="fade"></div>
+
+<!-- ------------------------------------------------------------ title card -->
+<div class="overlay" id="title">
+  <div class="card">
+    <h1>Dungeon Torchlight<span>first person · webassembly · webgl2</span></h1>
+    <p class="lede">
+      A lamp-borne crawl through a stone maze. Your torch reaches
+      <b>three squares</b>; everything past that pool is dark. Sconces are cut into
+      the walls <b>every six blocks</b> and each throws light <b>two squares</b> into
+      the corridor. Only the squares the flame can actually touch are ever traced,
+      which is why an 80×80 maze costs the same as a 6×6 one.
+    </p>
+    <div class="glyphs">
+      <div><i>▓</i>wall</div><div><i>░</i>door</div><div><i>╤</i>stairs down</div>
+      <div><i>╧</i>stairs up</div><div><i>≡</i>shrine</div><div><i>space</i>floor</div>
+      <div><i>^ &gt; &lt; v</i>your start &amp; facing</div>
+    </div>
+    <div id="drop">
+      <b>Drop a maze .txt here</b>
+      <span>or</span>
+      <button class="ghost" id="pick">Choose a file</button>
+      <input type="file" id="file" accept=".txt,text/plain">
+      <span id="mapName">maze1.txt</span>
+    </div>
+    <div class="row">
+      <button id="start">Enter the maze</button>
+      <button class="ghost" id="openSettings">Torch settings</button>
+    </div>
+    <div class="fine">
+      WASM raycast + lighting kernel, WebGL2 renderer. Maps up to 256×256.
+      Keyboard &amp; mouse: <b>WASD</b> move, <b>mouse</b> look, <b>E</b> doors/shrines,
+      <b>F</b> stairs, <b>Esc</b> settings.
+    </div>
+    <div class="err" id="bootErr"></div>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------- settings -->
+<div class="overlay hidden" id="settings">
+  <div class="card">
+    <h2>Torch &amp; sight</h2>
+    <div class="grid" id="fields"></div>
+    <div class="keys">
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</div>
+      <div><kbd>Shift</kbd> run</div>
+      <div><kbd>E</kbd> open / close door, touch shrine</div>
+      <div><kbd>F</kbd> take the stairs</div>
+      <div><kbd>Tab</kbd> map</div>
+      <div><kbd>Esc</kbd> settings</div>
+    </div>
+    <div class="row">
+      <button id="closeSettings">Resume</button>
+      <button class="ghost" id="resetMap">Reload maze</button>
+      <button class="ghost" id="wipeMap">Unchart map</button>
+    </div>
+  </div>
+</div>
+
+<!-- embedded fallbacks, filled by tools/build-html.js -->
+<script id="mazeWasmB64" type="text/plain">AGFzbQEAAAABYQ9gAAF/YAJ/fwF/YAF/AX9gAABgA39/fwBgA39/fwF/YAJ/fwBgAX8AYAN/f30AYAJ/fwF9YAR9fX9/AX9gBH19f38AYAh9fX19fX1/fQF/YAR/f39/AX9gBX19fX19AX8CDgEDZW52Bm1lbXNldAAFAzU0AwABAAAAAAAAAAAAAAAAAAQBAQYHAAMAAAACAgICAgEBBAgJAQEKCwEBAQEAAQMADA0ADgUDAQAyBi8HfwBBgAgLfwBB0IjBAQt/AEGACAt/AEHQiMUBC38AQYCAyAELfwBBAAt/AEEBCweaBzsGbWVtb3J5AgARX193YXNtX2NhbGxfY3RvcnMAARBtYXplX2FwaV92ZXJzaW9uAAIJbWF6ZV9pbml0AAMGbWF6ZV93AAQGbWF6ZV9oAAUJbWF6ZV9sbV93AAYJbWF6ZV9sbV9oAAcNbWF6ZV9sbV9zY2FsZQAICG9mZl9ncmlkAAkIb2ZmX2Rvb3IACglvZmZfbGlnaHQACwhvZmZfc2VlbgAMCG9mZl9yYXlzAA0Nb2ZmX2Rvb3JfYW5pbQAODW9mZl9kb29yX2F4aXMADw5vZmZfZG9vcl9oaW5nZQAQDW1hemVfc2V0X2NlbGwAEQltYXplX2NlbGwAEgptYXplX3NvbGlkABMQbWF6ZV9zZXRfc3BhY2luZwAUEG1hemVfc2V0X2ZhbGxvZmYAFQxtYXplX2ZhbGxvZmYAFg1tYXplX2ZpbmFsaXplABcQbWF6ZV90b3JjaF9jb3VudAAYEW1hemVfc2hyaW5lX2NvdW50ABkPbWF6ZV9kb29yX2NvdW50ABoPbWF6ZV90b3JjaF93YWxsABsPbWF6ZV90b3JjaF9vcGVuABwPbWF6ZV90b3JjaF9mYWNlAB0QbWF6ZV9zaHJpbmVfY2VsbAAeDm1hemVfZG9vcl9jZWxsAB8NbWF6ZV9kb29yX2dldAAgEG1hemVfZG9vcl90b2dnbGUAIQ1tYXplX2Rvb3Jfc2V0ACIObWF6ZV9kb29yX2FuaW0AIxJtYXplX2Rvb3JfYW5pbV9nZXQAJA5tYXplX2Rvb3JfYXhpcwAlD21hemVfZG9vcl9oaW5nZQAmEm1hemVfY29tcHV0ZV9saWdodAAnE21hemVfbGlnaHRtYXBfbGlnaHQAKRJtYXplX2xpZ2h0bWFwX3dh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</script>
+<script id="mazeFallback" type="text/plain">4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgIOKVpOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgICDilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paTICAgICAgICDilpPilpPilpPilpPilpPilpPilpMgICAgICAg4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paTICAg4paRICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpMgIOKJoSAgICDilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paTICAgICAgICAgIOKWkyAg4paRICAgICAgICDilpPilpPilpMg4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpMgICAgICAg4paT4paT4paT4paT4paT4paT4paT4paTICAgICAgICAgIOKWkSAg4paT4paTICAgICAgICAgIOKWkyDilpPilpMgICAgICAgIOKWk+KWk+KWkyDilpPilpPilpMgICAgICAg4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paTICDilpEgICAgICAgICAg4paRIOKWk+KWkyAgICAgICAg4paT4paT4paTIOKWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgICDilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paTICAgICAgICDilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paR4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paTICAgICAgICDilpEgICDilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paR4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWkyAgICAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWkeKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkeKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkeKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpMgICAgICAg4paT4paT4paT4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpPilpMgICAgICAgICDilpPilpPilpPilpPilpPilpPilpMgICAgICAgICDilpEgIOKWk+KWk+KWkyAgICAgICAgICDilpPilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpMgICAgICAg4paRICAg4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paT4paT4paTICAgICAgICAg4paT4paTICAg4paRICAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpMgICDilpEgICAgICAgICDilpPilpPilpPilpPilpPilpPilpMgICAgICAgICDilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paT4paTICAgICAgICDilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgICDilpEgICAg4paRICAgICAgICDilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paT4paR4paT4paT4paT4paT4paT4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paT4paTICAgICAgICDilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkeKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpPilpMgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTICAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTICAgICAgICDilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paR4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWkyAgICAgICAgICDilpPilpMgIOKWkSAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpMgICAgICAgICAg4paT4paTIOKWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpMgICAgIOKWkSAgICAgICAg4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWkyAgICAgICAgICDilpEgIOKWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpMg4paT4paT4paT4paT4paTICAgICAgICDilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpMg4paT4paT4paT4paT4paTICAgICAgICDilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWkSAgIOKWkSAgICAgICDilpEgICAg4paT4paT4paT4paT4paTICAgICAgICDilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paR4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICDilpPilpPilpPilpPilpMgICAgICAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paR4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAg4paT4paT4paT4paT4paT4paT4paT4paT4paTICAgICAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTICAg4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paR4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paR4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paR4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paR4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgICDilpEgICDilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paT4paT4paT4paTICAgICAgICAg4paRICAg4paT4paT4paTICAgICAgIOKWkSAg4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWkyAgIOKWkSAgICAgICAgICDilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paTICAgICAgICDilpEgIOKWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWkyDilpPilpPilpMgICAgICAg4paT4paTICAg4paRICAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgICDilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paTICAgICAgICDilpPilpMg4paT4paT4paTICAgICAgICAg4paT4paT4paTIOKWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWkyDilpPilpPilpMgICAgICAgICDilpPilpPilpMg4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgICDilpPilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkeKWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpMgICAgICAgICDilpPilpPilpMgICDilpEgICAgICAg4paT4paT4paT4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgICDilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWkyAgIOKWkSAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICDilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paT4paT4paTICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkeKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgICDilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkeKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpMgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkeKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paTIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpHilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpMgICAgICAgICDilpPilpPilpPilpPilpMgICAgICAgICDilpPilpPilpPilpPilpPilpPilpMgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAg4paRICDilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paTICAgIOKWkSAgICAgICAg4paT4paTIOKWk+KWk+KWkyAgICAgICAgICDilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paTICAgICAgICAg4paRICAg4paT4paT4paTICAgICAgICDilpPilpPilpMg4paT4paT4paT4paTICAgICAgICDilpPilpMg4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpMgICAgICAgICDilpPilpPilpPilpPilpMgICAgICAgICDilpPilpPilpMg4paT4paT4paTICAgICAgICDilpPilpPilpMg4paT4paT4paT4paTICAgICAgICDilpPilpMg4paT4paT4paTICAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpMgICAgICAgICDilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMgICDilpEgICAgICAgIOKWk+KWk+KWkyDilpPilpPilpPilpMgICAgICAgIOKWk+KWkyAgIOKWkSAgICAgICAgICDilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paTICAgICAgICAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTICAgICAgICDilpPilpPilpMg4paT4paT4paT4paTICAgICAgICDilpPilpPilpPilpPilpPilpMgICAgICAgICAg4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWkyAgICAgICAgIOKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paTIOKWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paT4paT4paT4paTICAgICAgICAg4pWn4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAg4paRICAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkyAgICAgICAg4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paTCuKWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWk+KWkwrilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpPilpMK4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT4paT</script>
+
+<script>
+"use strict";
+/* ======================================================================== *
+ * DUNGEON TORCHLIGHT
+ * ------------------------------------------------------------------------ *
+ * Front end for the WebAssembly kernel in wasm/maze.c.
+ *
+ * The kernel owns the maze: the grid, door state and swing geometry, the
+ * sub-cell lightmap, the fog-of-war mask, the DDA ray buffer and the
+ * circle-vs-grid collision test.  This file owns presentation: a WebGL2
+ * renderer that turns the ray buffer into real 3D wall quads, uploads the
+ * lightmap straight out of WASM linear memory as an RG8 texture, and drives
+ * the player.
+ *
+ * Everything visible is bounded by the flame: maze_cast() stops a ray the
+ * instant it leaves the torch pool, and maze_compute_light() only ever walks
+ * the sub-cells a light actually touched.
+ * ======================================================================== */
+
+/* ------------------------------------------------------------- config */
+const CFG = {
+  playerR: 3,          // player torch radius, in squares
+  wallR:   2,          // wall sconce radius, in squares
+  spacing: 6,          // "every 6 blocks a wall torch"
+  minGap:  3,          // minimum separation between sconces
+  falloff: 2,          // 1 linear, 2 ease-out, 3 tight, 4 very tight
+  fov:     72,         // degrees
+  resScale: 1,         // internal resolution multiplier
+  cols:      720,      // hard cap on traced columns
+  sens:      1.0,
+  turnSmooth: 1,       // 1 = glide the 20° turn, 0 = snap it instantly
+  speed:     2.5,      // squares / second
+  run:       1.75,
+  radius:    0.29,     // player collision radius, in squares
+  eye:       0.62,     // eye height, in wall heights
+  bob:       1,
+  fog:       1,
+  grain:     0.055,
+  vignette:  0.62,
+  audio:     true,
+  minimap:   true,
+  flicker:   1,
+};
+
+const TILE = { WALL:0, FLOOR:1, DOOR:2, UP:3, DOWN:4, SHRINE:5 };
+const GLYPH = {
+  '\u2593':0, '\u2588':0, '#':0, '%':0, '█':0,
+  ' ':1, '.':1, ',':1, '\u00b7':1,
+  '\u2591':2, '+':2, '-':2, '|':2, '\u2592':2,
+  '\u2567':3, 'u':3, 'U':3, '<':3,
+  '\u2564':4, 'd':4, 'D':4, '>':4,
+  '\u2261':5, 'S':5, '*':5,
+};
+/* ^ north, > east, v south, < west  — read before GLYPH so the marker wins */
+const FACING = { '^':0, '>':1, 'v':2, '<':3 };
+
+const state = {
+  wasm: null,           // instance.exports
+  W: 0, H: 0,
+  lmW: 0, lmH: 0, lmScale: 4,
+  grid: null, doors: null, seen: null, doorAnim: null, doorAxis: null, doorHinge: null,
+  light: null,          // Uint8Array [light, warmth] pairs
+  rays: null,           // Float32Array, 8 per column
+  off: {},
+  torches: [], shrines: [], stairUp: [], stairDown: [],
+  px: 7.5, py: 7.5, yaw: 0,     // yaw 0 = north
+  depth: 1,
+  running: false,
+  mapName: 'maze1.txt',
+  mapText: '',
+  doorTarget: new Map(),  // cellId -> 0|1 desired
+  lastStep: 0,
+  torchPhase: 0,
+  torchBoost: 0,        // shrine blessing, seconds remaining
+  seenTotal: 0,
+  fps: 60,
+};
+
+/* ------------------------------------------------------------- helpers */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function toast(msg, ms = 2200) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('on'), ms);
+}
+
+/* ------------------------------------------------------- wasm acquisition
+ * Order of attempts:
+ *   1. fetch('maze.wasm')            — the real build, when served over http
+ *   2. the base64 blob embedded below — so file:// works with no server
+ * The kernel needs exactly one import (env.memset); everything else,
+ * including sin/cos, is compiled in. */
+async function acquireWasm() {
+  const imports = { env: {
+    /* wasm32 memset(dst, value, len) — the only import the kernel asks for */
+    memset: (dst, value, len) => {
+      new Uint8Array(state.wasm.memory.buffer).fill(value, dst, dst + len);
+    },
+  } };
+
+  let bytes = null;
+  /* over file:// the browser refuses fetch() outright (CORS), so skip straight
+   * to the embedded build instead of eating a rejected request */
+  if (location.protocol !== 'file:') {
+    try {
+      const r = await fetch('maze.wasm', { cache: 'no-store' });
+      if (r.ok) bytes = new Uint8Array(await r.arrayBuffer());
+    } catch (e) { /* dev server missing the build */ }
+  }
+
+  if (!bytes) {
+    const b64 = $('mazeWasmB64').textContent.trim();
+    if (b64) {
+      const bin = atob(b64);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    }
+  }
+  if (!bytes) throw new Error('maze.wasm not found and no embedded build present');
+
+  const { instance } = await WebAssembly.instantiate(bytes, imports);
+  const E = instance.exports;
+  if (typeof E.maze_api_version !== 'function') throw new Error('unexpected wasm exports');
+  const v = E.maze_api_version();
+  if (v < 1101) throw new Error('maze.wasm is stale (api ' + v + '); rebuild wasm/maze.c');
+  state.wasm = E;
+  return v;
+}
+
+/* Bind JS views directly onto wasm linear memory: no copies, ever. */
+function bindViews() {
+  const E = state.wasm;
+  const buf = E.memory.buffer;
+  state.off = {
+    grid: E.off_grid(), door: E.off_door(), seen: E.off_seen(),
+    light: E.off_light(), rays: E.off_rays(),
+    anim: E.off_door_anim(), axis: E.off_door_axis(), hinge: E.off_door_hinge(),
+  };
+  const cells = state.W * state.H;
+  state.grid     = new Uint8Array(buf, state.off.grid, cells);
+  state.doors    = new Uint8Array(buf, state.off.door, cells);
+  state.seen     = new Uint8Array(buf, state.off.seen, cells);
+  state.doorAnim = new Float32Array(buf, state.off.anim, cells);
+  state.doorAxis = new Int8Array(buf, state.off.axis, cells);
+  state.doorHinge= new Int8Array(buf, state.off.hinge, cells);
+  state.light    = new Uint8Array(buf, state.off.light, state.lmW * state.lmH * 2);
+  state.rays     = new Float32Array(buf, state.off.rays, 4096 * 8);
+}
+
+/* ------------------------------------------------------------- map parse */
+function parseMap(text) {
+  let lines = text.replace(/\r\n?/g, '\n').split('\n');
+  while (lines.length && lines[lines.length - 1] === '') lines.pop();
+  if (!lines.length) throw new Error('the maze file is empty');
+
+  let W = 0;
+  for (const l of lines) W = Math.max(W, [...l].length);
+  const H = lines.length;
+  if (W > 256 || H > 256) throw new Error('map is ' + W + '×' + H + '; the kernel caps at 256×256');
+
+  const rows = lines.map(l => [...l]);
+  let start = null;
+
+  const cells = new Array(H);
+  for (let y = 0; y < H; y++) {
+    const row = new Uint8Array(W);
+    const r = rows[y];
+    for (let x = 0; x < W; x++) {
+      const ch = r[x] ?? ' ';
+      if (FACING[ch] !== undefined && !start) {
+        start = { x, y, facing: FACING[ch] };
+        row[x] = TILE.FLOOR;
+        continue;
+      }
+      row[x] = GLYPH[ch] ?? TILE.WALL;
+    }
+    cells[y] = row;
+  }
+
+  if (!start) {
+    /* no marker in the file: pick the first walkable cell that has a walkable
+     * neighbour, facing into the maze */
+    outer:
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const t = cells[y][x];
+        if (t === TILE.WALL || t === TILE.DOOR) continue;
+        const D = [[0,-1],[1,0],[0,1],[-1,0]];
+        for (let k = 0; k < 4; k++) {
+          const nx = x + D[k][0], ny = y + D[k][1];
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const nt = cells[ny][nx];
+          if (nt !== TILE.WALL) { start = { x, y, facing: k }; break outer; }
+        }
+      }
+    }
+    if (!start) throw new Error('no walkable square found in the maze');
+  }
+
+  return { W, H, cells, start };
+}
+
+/* Push a parsed map into the kernel and collect its props. */
+function loadMap(text, name) {
+  const m = parseMap(text);
+  const E = state.wasm;
+  E.maze_init(m.W, m.H);
+  state.W = m.W; state.H = m.H;
+  E.maze_set_spacing(CFG.spacing, CFG.minGap);
+  E.maze_set_falloff(CFG.falloff);
+  for (let y = 0; y < m.H; y++)
+    for (let x = 0; x < m.W; x++)
+      E.maze_set_cell(x, y, m.cells[y][x]);
+  E.maze_finalize();
+
+  state.lmW = E.maze_lm_w(); state.lmH = E.maze_lm_h(); state.lmScale = E.maze_lm_scale();
+  bindViews();
+
+  state.torches.length = 0;
+  collectTorches();
+  state.shrines.length = 0;
+  for (let i = 0; i < E.maze_shrine_count(); i++) {
+    const c = E.maze_shrine_cell(i);
+    state.shrines.push({ cell: c, x: (c % m.W) + 0.5, y: ((c / m.W) | 0) + 0.5 });
+  }
+  state.stairUp.length = 0; state.stairDown.length = 0;
+  for (let y = 0; y < m.H; y++)
+    for (let x = 0; x < m.W; x++) {
+      const t = m.cells[y][x];
+      if (t === TILE.UP) state.stairUp.push({ x: x + 0.5, y: y + 0.5 });
+      else if (t === TILE.DOWN) state.stairDown.push({ x: x + 0.5, y: y + 0.5 });
+    }
+
+  state.px = m.start.x + 0.5;
+  state.py = m.start.y + 0.5;
+  state.yaw = [0, Math.PI / 2, Math.PI, -Math.PI / 2][m.start.facing];
+  state.doorTarget.clear();
+  state.seenTotal = 0;
+  state.mapText = text;
+  state.mapName = name || state.mapName;
+  buildMinimapBase();
+  return m;
+}
+
+/* ============================================================ WebGL2 layer */
+const WALL_H = 1.15;      // corridor height, in squares
+const DOOR_H = 0.94 * WALL_H;
+
+let gl = null, canvas = null, veil = null, vctx = null;
+let progMain = null, progSprite = null;
+let texWall = null, texFloor = null, texCeil = null, texDoor = null, texLight = null;
+let vaoMain = null, vaoSprite = null;
+let _bufMain = null, _bufSprite = null;
+let viewW = 0, viewH = 0;
+
+const U = {};   // main program uniforms
+const US = {};  // sprite program uniforms
+
+/* dynamic interleaved meshes -------------------------------------------- */
+class Mesh {
+  constructor(stride, cap) { this.s = stride; this.a = new Float32Array(stride * cap); this.n = 0; }
+  reset() { this.n = 0; }
+  room(k) {
+    if (this.n + k > this.a.length) {
+      const b = new Float32Array((this.n + k) * 2);
+      b.set(this.a); this.a = b;
+    }
+  }
+  push(...v) { this.room(this.s); for (let i = 0; i < this.s; i++) this.a[this.n++] = v[i]; }
+  view() { return this.a.subarray(0, this.n); }
+}
+
+const mWall = new Mesh(8, 4096), mFloor = new Mesh(8, 4096),
+      mCeil = new Mesh(8, 4096), mDoor = new Mesh(8, 1024),
+      mLeaves = new Mesh(8, 1024), mSprite = new Mesh(6, 1024);
+
+/* --------------------------------------------------- procedural textures */
+function rng(seed) { let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
+
+function makeCanvas(size) {
+  const c = document.createElement('canvas'); c.width = c.height = size; return c;
+}
+
+/* A stone wall: irregular courses, mortar, damp, chipped arrises. */
+function wallVariant(size, seed, palette) {
+  const c = makeCanvas(size), x = c.getContext('2d'), R = rng(seed);
+  x.fillStyle = palette.mortar; x.fillRect(0, 0, size, size);
+  const rows = 5 + ((seed >> 3) & 3);
+  const rh = size / rows;
+  for (let r = 0; r < rows; r++) {
+    const y = r * rh;
+    let px = -Math.floor(R() * rh);
+    while (px < size) {
+      const w = rh * (0.9 + R() * 1.5);
+      const tone = 0.62 + R() * 0.38;
+      const hue = palette.base;
+      const rr = hue[0] * tone, gg = hue[1] * tone, bb = hue[2] * tone;
+      x.fillStyle = `rgb(${rr | 0},${gg | 0},${bb | 0})`;
+      const inset = 1.6;
+      x.fillRect(px + inset, y + inset, w - inset * 2, rh - inset * 2);
+
+      // face shading: brighter top arris, darker bottom
+      const g = x.createLinearGradient(0, y, 0, y + rh);
+      g.addColorStop(0, 'rgba(255,240,220,.10)');
+      g.addColorStop(0.35, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,.26)');
+      x.fillStyle = g; x.fillRect(px + inset, y + inset, w - inset * 2, rh - inset * 2);
+
+      // chips and pitting
+      for (let k = 0; k < 10; k++) {
+        const cx = px + R() * w, cy = y + R() * rh, s = 0.6 + R() * 2.4;
+        x.fillStyle = `rgba(0,0,0,${0.10 + R() * 0.22})`;
+        x.beginPath(); x.arc(cx, cy, s, 0, 7); x.fill();
+      }
+      if (R() < 0.22) {  // a crack
+        x.strokeStyle = 'rgba(0,0,0,.42)'; x.lineWidth = 1;
+        x.beginPath();
+        let cx = px + R() * w, cy = y + 2;
+        x.moveTo(cx, cy);
+        for (let k = 0; k < 5; k++) { cx += (R() - 0.5) * 12; cy += rh / 5; x.lineTo(cx, cy); }
+        x.stroke();
+      }
+      px += w;
+    }
+  }
+  // grime at the floor line, dry bloom near the top
+  let g = x.createLinearGradient(0, size * 0.72, 0, size);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(10,8,6,.55)');
+  x.fillStyle = g; x.fillRect(0, size * 0.72, size, size * 0.28);
+  g = x.createLinearGradient(0, 0, 0, size * 0.2);
+  g.addColorStop(0, 'rgba(120,110,95,.10)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g; x.fillRect(0, 0, size, size * 0.2);
+
+  // per-pixel grain
+  const img = x.getImageData(0, 0, size, size), d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (R() - 0.5) * 22;
+    d[i] = clamp(d[i] + n, 0, 255); d[i + 1] = clamp(d[i + 1] + n * 0.95, 0, 255);
+    d[i + 2] = clamp(d[i + 2] + n * 0.85, 0, 255);
+  }
+  x.putImageData(img, 0, 0);
+  return c;
+}
+
+/* 2x2 atlas of four wall variants so a corridor reads as different stone */
+function makeWallAtlas() {
+  const S = 256, c = makeCanvas(S * 2), x = c.getContext('2d');
+  const palettes = [
+    { base: [104, 96, 84], mortar: '#2b2721' },
+    { base: [92, 88, 82],  mortar: '#25231f' },
+    { base: [116, 100, 78], mortar: '#2e2820' },
+    { base: [78, 78, 76],  mortar: '#211f1d' },
+  ];
+  for (let i = 0; i < 4; i++) {
+    const v = wallVariant(S, 1237 + i * 977, palettes[i]);
+    x.drawImage(v, (i & 1) * S, ((i >> 1) & 1) * S);
+  }
+  return c;
+}
+
+function makeFloorTex() {
+  const S = 256, c = makeCanvas(S), x = c.getContext('2d'), R = rng(4471);
+  x.fillStyle = '#161412'; x.fillRect(0, 0, S, S);
+  const n = 4, t = S / n;
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const tone = 0.55 + R() * 0.45;
+    x.fillStyle = `rgb(${(74 * tone) | 0},${(68 * tone) | 0},${(58 * tone) | 0})`;
+    x.fillRect(i * t + 2, j * t + 2, t - 4, t - 4);
+    const g = x.createLinearGradient(i * t, j * t, i * t + t, j * t + t);
+    g.addColorStop(0, 'rgba(255,240,220,.06)'); g.addColorStop(1, 'rgba(0,0,0,.22)');
+    x.fillStyle = g; x.fillRect(i * t + 2, j * t + 2, t - 4, t - 4);
+    for (let k = 0; k < 26; k++) {
+      x.fillStyle = `rgba(0,0,0,${0.06 + R() * 0.18})`;
+      x.beginPath(); x.arc(i * t + R() * t, j * t + R() * t, 0.5 + R() * 2.2, 0, 7); x.fill();
+    }
+  }
+  const img = x.getImageData(0, 0, S, S), d = img.data;
+  for (let i = 0; i < d.length; i += 4) { const v = (R() - 0.5) * 16; d[i] += v; d[i + 1] += v; d[i + 2] += v; }
+  x.putImageData(img, 0, 0);
+  return c;
+}
+
+function makeCeilTex() {
+  const S = 256, c = makeCanvas(S), x = c.getContext('2d'), R = rng(9091);
+  x.fillStyle = '#0d0c0b'; x.fillRect(0, 0, S, S);
+  for (let k = 0; k < 260; k++) {
+    const r = 3 + R() * 11, cx = R() * S, cy = R() * S, tone = 0.30 + R() * 0.55;
+    x.fillStyle = `rgb(${(58 * tone) | 0},${(53 * tone) | 0},${(46 * tone) | 0})`;
+    x.beginPath(); x.ellipse(cx, cy, r, r * (0.6 + R() * 0.5), R() * 3.14, 0, 7); x.fill();
+  }
+  const img = x.getImageData(0, 0, S, S), d = img.data;
+  for (let i = 0; i < d.length; i += 4) { const v = (R() - 0.5) * 14; d[i] += v; d[i + 1] += v; d[i + 2] += v; }
+  x.putImageData(img, 0, 0);
+  return c;
+}
+
+function makeDoorTex() {
+  const S = 256, c = makeCanvas(S), x = c.getContext('2d'), R = rng(2311);
+  x.fillStyle = '#241a11'; x.fillRect(0, 0, S, S);
+  const planks = 5, pw = S / planks;
+  for (let i = 0; i < planks; i++) {
+    const tone = 0.7 + R() * 0.5;
+    x.fillStyle = `rgb(${(78 * tone) | 0},${(52 * tone) | 0},${(31 * tone) | 0})`;
+    x.fillRect(i * pw + 2, 0, pw - 5, S);
+    // grain streaks
+    for (let k = 0; k < 40; k++) {
+      x.strokeStyle = `rgba(0,0,0,${0.08 + R() * 0.2})`; x.lineWidth = 0.6 + R();
+      x.beginPath();
+      let cx = i * pw + 4 + R() * (pw - 8), cy = 0;
+      x.moveTo(cx, cy);
+      while (cy < S) { cx += (R() - 0.5) * 5; cy += 14; x.lineTo(cx, cy); }
+      x.stroke();
+    }
+    x.fillStyle = 'rgba(0,0,0,.34)'; x.fillRect(i * pw, 0, 2, S);
+  }
+  // iron bands + rivets
+  for (const by of [S * 0.16, S * 0.72]) {
+    x.fillStyle = '#2c2c30'; x.fillRect(0, by, S, 16);
+    const g = x.createLinearGradient(0, by, 0, by + 16);
+    g.addColorStop(0, 'rgba(190,190,205,.22)'); g.addColorStop(0.5, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,.4)');
+    x.fillStyle = g; x.fillRect(0, by, S, 16);
+    for (let i = 0; i < 8; i++) {
+      x.fillStyle = '#6d6a70'; x.beginPath(); x.arc(16 + i * (S - 32) / 7, by + 8, 3.2, 0, 7); x.fill();
+    }
+  }
+  // ring handle
+  x.strokeStyle = '#5a5450'; x.lineWidth = 5;
+  x.beginPath(); x.arc(S * 0.78, S * 0.46, 15, 0, 7); x.stroke();
+  const img = x.getImageData(0, 0, S, S), d = img.data;
+  for (let i = 0; i < d.length; i += 4) { const v = (R() - 0.5) * 12; d[i] += v; d[i + 1] += v * 0.9; d[i + 2] += v * 0.8; }
+  x.putImageData(img, 0, 0);
+  return c;
+}
+
+/* ------------------------------------------------------------ shaders */
+const VS_MAIN = `#version 300 es
+precision highp float;
+in vec3 aPos;              // view space: x right, y up, z = forward depth
+in vec2 aStone;
+in vec2 aLight;
+in float aShade;
+uniform float uF, uAspect, uNear, uFar;
+out vec2 vStone; out vec2 vLight; out float vShade; out float vDepth;
+void main() {
+  float d = aPos.z;
+  vStone = aStone; vLight = aLight; vShade = aShade; vDepth = d;
+  float zc = ((uFar + uNear) * d - 2.0 * uFar * uNear) / (uFar - uNear);
+  gl_Position = vec4(aPos.x * uF / uAspect, aPos.y * uF, zc, d);
+}`;
+
+const FS_MAIN = `#version 300 es
+precision highp float;
+in vec2 vStone; in vec2 vLight; in float vShade; in float vDepth;
+uniform sampler2D uTex;
+uniform sampler2D uLight;
+uniform float uFlicker, uFog, uGrain, uVig, uBoost, uTime;
+uniform vec2 uRes;
+out vec4 outColor;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+void main() {
+  vec3 stone = texture(uTex, vStone).rgb;
+  vec2 lg = texture(uLight, vLight).rg;   // RG8 straight out of wasm memory
+  float L = lg.r, W = lg.g;
+  vec3 lamp = mix(vec3(1.0, 0.50, 0.19), vec3(1.0, 0.85, 0.62), W);
+  float amt = L * uFlicker * (1.0 + uBoost);
+  vec3 c = stone * lamp * amt * vShade;
+  c += stone * vec3(0.008, 0.011, 0.020) * vShade;          // cold ambient
+  float fog = exp(-pow(max(0.0, vDepth - 1.2) * 0.17 * uFog, 2.0));
+  c *= fog;
+  vec2 ndc = (gl_FragCoord.xy / uRes) - 0.5;
+  float v = 1.0 - uVig * dot(ndc, ndc) * 2.4;
+  c *= clamp(v, 0.0, 1.0);
+  c += (hash(gl_FragCoord.xy + uTime) - 0.5) * uGrain;
+  outColor = vec4(max(c, 0.0), 1.0);
+}`;
+
+const VS_SPR = `#version 300 es
+precision highp float;
+in vec3 aPos; in vec2 aUV; in float aInt;
+uniform float uF, uAspect, uNear, uFar;
+out vec2 vUV; out float vInt;
+void main() {
+  float d = aPos.z;
+  vUV = aUV; vInt = aInt;
+  float zc = ((uFar + uNear) * d - 2.0 * uFar * uNear) / (uFar - uNear);
+  gl_Position = vec4(aPos.x * uF / uAspect, aPos.y * uF, zc, d);
+}`;
+
+const FS_SPR = `#version 300 es
+precision highp float;
+in vec2 vUV; in float vInt;
+out vec4 outColor;
+void main() {
+  float r = length(vUV - 0.5) * 2.0;
+  if (r > 1.0) discard;
+  float glow = pow(max(0.0, 1.0 - r), 2.3);
+  float core = pow(max(0.0, 1.0 - r * 1.85), 4.5);
+  vec3 col = mix(vec3(1.0, 0.34, 0.05), vec3(1.0, 0.96, 0.78), core);
+  col *= (glow * 0.42 + core * 1.7) * vInt;
+  outColor = vec4(col, 1.0);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error('shader: ' + gl.getShaderInfoLog(s));
+  return s;
+}
+function link(vs, fs, names) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+  const u = {};
+  for (const n of names) u[n] = gl.getUniformLocation(p, n);
+  return { p, u };
+}
+
+function initGL() {
+  canvas = $('gl');
+  gl = canvas.getContext('webgl2', { antialias: true, alpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL2 is not available in this browser');
+  veil = $('veil'); vctx = veil.getContext('2d');
+
+  const m = link(VS_MAIN, FS_MAIN,
+    ['uF', 'uAspect', 'uNear', 'uFar', 'uTex', 'uLight', 'uFlicker', 'uFog', 'uGrain', 'uVig', 'uBoost', 'uTime', 'uRes']);
+  progMain = m.p; Object.assign(U, m.u);
+  const s = link(VS_SPR, FS_SPR, ['uF', 'uAspect', 'uNear', 'uFar']);
+  progSprite = s.p; Object.assign(US, s.u);
+
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.disable(gl.CULL_FACE);
+  gl.clearColor(0.008, 0.008, 0.012, 1);
+
+  texWall  = bindTex(makeWallAtlas(), false);
+  texFloor = bindTex(makeFloorTex(), true);
+  texCeil  = bindTex(makeCeilTex(), true);
+  texDoor  = bindTex(makeDoorTex(), false);
+
+  texLight = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texLight);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  // main VAO: pos3 stone2 light2 shade1  (stride 8 floats)
+  vaoMain = gl.createVertexArray();
+  _bufMain = gl.createBuffer();
+  gl.bindVertexArray(vaoMain);
+  gl.bindBuffer(gl.ARRAY_BUFFER, _bufMain);
+  gl.bufferData(gl.ARRAY_BUFFER, 65536 * 32, gl.DYNAMIC_DRAW);
+  attrib(0, 3, 0); attrib(1, 2, 12); attrib(2, 2, 20); attrib(3, 1, 28);
+  gl.bindVertexArray(null);
+
+  vaoSprite = gl.createVertexArray();
+  _bufSprite = gl.createBuffer();
+  gl.bindVertexArray(vaoSprite);
+  gl.bindBuffer(gl.ARRAY_BUFFER, _bufSprite);
+  gl.bufferData(gl.ARRAY_BUFFER, 16384 * 24, gl.DYNAMIC_DRAW);
+  attribS(0, 3, 0); attribS(1, 2, 12); attribS(2, 1, 20);
+  gl.bindVertexArray(null);
+}
+function attrib(loc, size, off) {
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 32, off);
+}
+function attribS(loc, size, off) {
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 24, off);
+}
+function bindTex(src, repeat) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
+  const w = repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, w);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, w);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  return t;
+}
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  viewW = Math.max(320, Math.floor(innerWidth * dpr * CFG.resScale));
+  viewH = Math.max(240, Math.floor(innerHeight * dpr * CFG.resScale));
+  canvas.width = viewW; canvas.height = viewH;
+  canvas.style.width = innerWidth + 'px'; canvas.style.height = innerHeight + 'px';
+  veil.width = Math.max(2, Math.floor(innerWidth / 3));
+  veil.height = Math.max(2, Math.floor(innerHeight / 3));
+  veil.style.width = innerWidth + 'px'; veil.style.height = innerHeight + 'px';
+  if (gl) gl.viewport(0, 0, viewW, viewH);
+}
+
+/* ------------------------------------------------- camera / view helpers */
+let dirX = 0, dirY = -1, rightX = 1, rightY = 0, eyeH = CFG.eye;
+let tanHalf = Math.tan(CFG.fov * Math.PI / 360);
+
+function updateBasis() {
+  dirX = Math.sin(state.yaw); dirY = -Math.cos(state.yaw);
+  rightX = Math.cos(state.yaw); rightY = Math.sin(state.yaw);
+  tanHalf = Math.tan(CFG.fov * Math.PI / 360);
+}
+
+/* Replicated from the kernel so the renderer and the DDA agree exactly. */
+function doorLeaf(id, x, y, anim) {
+  const hinge = state.doorHinge[id], axis = state.doorAxis[id];
+  const s = hinge === 0 ? 1 : -1;
+  const hx = x + hinge, hy = y + hinge;
+  let sx, sy, ox, oy;
+  if (axis === 0) { sx = s; sy = 0; ox = 0; oy = s; } else { sx = 0; sy = s; ox = s; oy = 0; }
+  const th = anim * Math.PI / 2, c = Math.cos(th), sn = Math.sin(th);
+  return [hx, hy, hx + c * sx + sn * ox, hy + c * sy + sn * oy];
+}
+
+function lightUV(wx, wy) {
+  let u = (wx * state.lmScale + 0.5) / state.lmW;
+  let v = (wy * state.lmScale + 0.5) / state.lmH;
+  return [clamp(u, 0.5 / state.lmW, 1 - 0.5 / state.lmW), clamp(v, 0.5 / state.lmH, 1 - 0.5 / state.lmH)];
+}
+
+/* ======================================================== mesh assembly */
+const faceMap = new Map();
+
+function quad(mesh, p0, p1, p2, p3, s0, s1, s2, s3, l0, l1, l2, l3, shade) {
+  mesh.push(p0[0], p0[1], p0[2], s0[0], s0[1], l0[0], l0[1], shade);
+  mesh.push(p1[0], p1[1], p1[2], s1[0], s1[1], l1[0], l1[1], shade);
+  mesh.push(p2[0], p2[1], p2[2], s2[0], s2[1], l2[0], l2[1], shade);
+  mesh.push(p0[0], p0[1], p0[2], s0[0], s0[1], l0[0], l0[1], shade);
+  mesh.push(p2[0], p2[1], p2[2], s2[0], s2[1], l2[0], l2[1], shade);
+  mesh.push(p3[0], p3[1], p3[2], s3[0], s3[1], l3[0], l3[1], shade);
+}
+
+/* Turn the ray buffer into real wall quads.  Columns that hit the same wall
+ * face are merged, so a 720-column cast still produces a handful of quads. */
+function buildWalls(cols) {
+  faceMap.clear();
+  const rays = state.rays;
+  const planeX = rightX * tanHalf, planeY = rightY * tanHalf;
+
+  for (let c = 0; c < cols; c++) {
+    const o = c * 8;
+    const perp = rays[o];
+    if (!(perp > 0)) continue;
+    const meta = rays[o + 2] | 0;
+    if (meta & 32) continue;                 // mid-swing leaf: drawn separately
+    const side = meta & 1, isDoor = (meta & 16) !== 0;
+    const hx = rays[o + 3] | 0, hy = rays[o + 4] | 0;
+    if (rays[o + 5] < 2) continue;           // outside the flame: nothing to draw
+
+    const camX = (2 * c) / cols - 1;
+    const rdx = dirX + planeX * camX, rdy = dirY + planeY * camX;
+
+    let key, plane, span;
+    if (side === 0) { plane = rdx > 0 ? hx : hx + 1; span = hy; key = (plane << 10) | span; }
+    else            { plane = rdy > 0 ? hy : hy + 1; span = hx; key = (1 << 20) | (plane << 10) | span; }
+
+    if (!faceMap.has(key)) faceMap.set(key, { side, plane, span, isDoor });
+  }
+
+  mWall.reset(); mDoor.reset();
+
+  for (const f of faceMap.values()) {
+    const variant = (((f.span * 73856093) ^ (f.plane * 19349663)) >>> 0) & 3;
+    const col = variant & 1, row = (variant >> 1) & 1;
+    const inset = 0.006;
+
+    /* stone uv: u slides along the face, v is the height fraction; both are
+     * folded into this variant's quadrant of the 2x2 atlas */
+    const stone = (u, hz, H) => {
+      const uu = clamp(u, inset, 1 - inset);
+      const vv = clamp(hz / H, inset, 1 - inset);
+      return [col * 0.5 + uu * 0.5, row * 0.5 + vv * 0.5];
+    };
+
+    const nx = f.side === 0 ? 1 : 0, ny = f.side === 0 ? 0 : 1;
+    const L = (wx, wy) => lightUV(wx - nx * 0.07, wy - ny * 0.07);
+    const shade = f.side === 0 ? 1.0 : 0.84;
+
+    // world-space corners of the face, ordered counter-clockwise from low-u
+    let w0, w1, w2, w3;
+    if (f.side === 0) {
+      w0 = [f.plane, f.span]; w1 = [f.plane, f.span + 1];
+      w2 = [f.plane, f.span + 1]; w3 = [f.plane, f.span];
+    } else {
+      w0 = [f.span, f.plane]; w1 = [f.span + 1, f.plane];
+      w2 = [f.span + 1, f.plane]; w3 = [f.span, f.plane];
+    }
+
+    const target = f.isDoor ? mDoor : mWall;
+    const H = f.isDoor ? DOOR_H : WALL_H;
+
+    const P = (w, hz) => toView(w[0], w[1], hz);
+    quad(target,
+      P(w0, 0), P(w1, 0), P(w2, H), P(w3, H),
+      stone(0, 0, H), stone(1, 0, H), stone(1, H, H), stone(0, H, H),
+      L(w0[0], w0[1]), L(w1[0], w1[1]), L(w2[0], w2[1]), L(w3[0], w3[1]),
+      shade);
+
+    /* a shut door sits under a stone lintel, which is what makes a doorway
+     * read as a doorway rather than a full-height slab */
+    if (f.isDoor && DOOR_H < WALL_H - 0.02) {
+      quad(mWall,
+        P(w0, DOOR_H), P(w1, DOOR_H), P(w2, WALL_H), P(w3, WALL_H),
+        stone(0, 0, WALL_H - DOOR_H), stone(1, 0, WALL_H - DOOR_H),
+        stone(1, WALL_H - DOOR_H, WALL_H - DOOR_H), stone(0, WALL_H - DOOR_H, WALL_H - DOOR_H),
+        L(w0[0], w0[1]), L(w1[0], w1[1]), L(w2[0], w2[1]), L(w3[0], w3[1]),
+        shade * 0.94);
+    }
+  }
+}
+
+function toView(wx, wy, wz) {
+  const dx = wx - state.px, dy = wy - state.py, dz = wz - eyeH;
+  return [dx * rightX + dy * rightY, dz, dx * dirX + dy * dirY];
+}
+
+function buildFloors() {
+  mFloor.reset(); mCeil.reset();
+  const pcx = state.px | 0, pcy = state.py | 0;
+  const half = CFG.playerR + CFG.wallR + 2;
+  const S = state.lmScale, lmW = state.lmW, light = state.light;
+
+  for (let y = pcy - half; y <= pcy + half; y++) {
+    if (y < 0 || y >= state.H) continue;
+    for (let x = pcx - half; x <= pcx + half; x++) {
+      if (x < 0 || x >= state.W) continue;
+      if (state.grid[y * state.W + x] === TILE.WALL) continue;
+
+      /* only cells the flame actually touched get a floor and a ceiling */
+      let lit = false;
+      const bx = x * S, by = y * S;
+      for (let sy = 0; sy < S && !lit; sy++) {
+        const rowOff = (by + sy) * lmW + bx;
+        for (let sx = 0; sx < S; sx++)
+          if (light[(rowOff + sx) * 2]) { lit = true; break; }
+      }
+      if (!lit) continue;
+
+      const p0 = toView(x, y, 0), p1 = toView(x + 1, y, 0),
+            p2 = toView(x + 1, y + 1, 0), p3 = toView(x, y + 1, 0);
+      const c0 = toView(x, y, WALL_H), c1 = toView(x + 1, y, WALL_H),
+            c2 = toView(x + 1, y + 1, WALL_H), c3 = toView(x, y + 1, WALL_H);
+      const l0 = lightUV(x + 0.03, y + 0.03), l1 = lightUV(x + 0.97, y + 0.03),
+            l2 = lightUV(x + 0.97, y + 0.97), l3 = lightUV(x + 0.03, y + 0.97);
+      const s0 = [x, y], s1 = [x + 1, y], s2 = [x + 1, y + 1], s3 = [x, y + 1];
+      quad(mFloor, p0, p1, p2, p3, s0, s1, s2, s3, l0, l1, l2, l3, 0.93);
+      quad(mCeil, c3, c2, c1, c0, s3, s2, s1, s0, l3, l2, l1, l0, 0.70);
+    }
+  }
+}
+
+/* Leaves caught mid-swing: real rotated panels, lit from the lightmap. */
+function buildDoorLeaves() {
+  mLeaves.reset();
+  const pcx = state.px | 0, pcy = state.py | 0;
+  const half = CFG.playerR + CFG.wallR + 2;
+  for (let y = pcy - half; y <= pcy + half; y++) {
+    if (y < 0 || y >= state.H) continue;
+    for (let x = pcx - half; x <= pcx + half; x++) {
+      if (x < 0 || x >= state.W) continue;
+      const id = y * state.W + x;
+      if (state.grid[id] !== TILE.DOOR) continue;
+      const anim = state.doorAnim[id];
+      if (anim <= 0.02 || anim >= 0.98) continue;
+      const [ax, ay, bx, by] = doorLeaf(id, x, y, anim);
+      const p0 = toView(ax, ay, 0), p1 = toView(bx, by, 0),
+            p2 = toView(bx, by, DOOR_H), p3 = toView(ax, ay, DOOR_H);
+      const l0 = lightUV(ax, ay), l1 = lightUV(bx, by),
+            l2 = lightUV(bx, by), l3 = lightUV(ax, ay);
+      quad(mLeaves, p0, p1, p2, p3, [0, 0], [1, 0], [1, 1], [0, 1], l0, l1, l2, l3, 1.0);
+    }
+  }
+}
+
+function buildSprites(time) {
+  mSprite.reset();
+  const pcx = state.px | 0, pcy = state.py | 0;
+  const flick = flicker(time);
+
+  const addGlow = (wx, wy, hz, size, intensity) => {
+    const v = toView(wx, wy, hz);
+    if (v[2] < 0.12) return;
+    const s = size;
+    const push = (cx, cy, u, vv) => mSprite.push(v[0] + cx, v[1] + cy, v[2], u, vv, intensity);
+    push(-s, -s, 0, 0); push(s, -s, 1, 0); push(s, s, 1, 1);
+    push(-s, -s, 0, 0); push(s, s, 1, 1); push(-s, s, 0, 1);
+  };
+
+  // wall sconces: flame + bracket, culled by reach and by line of sight
+  if (CFG.wallR > 0) {
+    const reach = CFG.playerR + CFG.wallR + 3;
+    for (const t of state.torches) {
+      const dx = t.ox - state.px, dy = t.oy - state.py;
+      if (dx * dx + dy * dy > reach * reach) continue;
+      if (!state.wasm.maze_can_see(pcx, pcy, t.open % state.W, (t.open / state.W) | 0)) continue;
+      const fx = t.ox + DXF[t.face] * 0.42, fy = t.oy + DYF[t.face] * 0.42;
+      const hz = WALL_H * 0.70;
+      addGlow(fx, fy, hz, 0.16, 1.15 * flick);
+      addGlow(fx, fy, hz + 0.10, 0.62, 0.30 * flick);
+    }
+  }
+  // shrine glow
+  for (const s of state.shrines) {
+    const dx = s.x - state.px, dy = s.y - state.py;
+    if (dx * dx + dy * dy > 64) continue;
+    if (!state.wasm.maze_can_see(pcx, pcy, (s.x | 0), (s.y | 0))) continue;
+    const p = 0.55 + 0.25 * Math.sin(time * 1.7);
+    addGlow(s.x, s.y, WALL_H * 0.42, 0.34, 0.85 * p);
+    addGlow(s.x, s.y, WALL_H * 0.42, 1.05, 0.20 * p);
+  }
+}
+const DXF = [0, 1, 0, -1], DYF = [-1, 0, 1, 0];
+
+/* torch flicker: two incommensurate sines plus a little jitter */
+function flicker(t) {
+  if (!CFG.flicker) return 1;
+  return 1 + 0.055 * Math.sin(t * 9.3) + 0.035 * Math.sin(t * 21.7 + 1.3)
+           + 0.02 * Math.sin(t * 41.1 + 0.4);
+}
+
+/* ------------------------------------------------------------- drawing */
+function uploadLightmap() {
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.bindTexture(gl.TEXTURE_2D, texLight);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8, state.lmW, state.lmH, 0, gl.RG, gl.UNSIGNED_BYTE, state.light);
+}
+
+function drawMesh(mesh, tex) {
+  if (mesh.n === 0) return;
+  gl.bindVertexArray(vaoMain);
+  gl.bindBuffer(gl.ARRAY_BUFFER, _bufMain);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, mesh.view());
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.drawArrays(gl.TRIANGLES, 0, mesh.n / 8);
+}
+
+function render(time) {
+  updateBasis();
+
+  const cols = Math.min(CFG.cols, Math.max(200, Math.floor(viewW * 0.8)));
+  const maxDist = Math.max(CFG.playerR + 1.4, CFG.wallR + 1.4);
+  const E = state.wasm;
+
+  /* the whole frame's work is bounded by the flame: the light pass walks only
+   * the sub-cells a light touched, the cast stops at the edge of the pool */
+  E.maze_compute_light(state.px, state.py, CFG.playerR + (state.torchBoost > 0 ? 1 : 0), CFG.wallR);
+  E.maze_cast(state.px, state.py, dirX, dirY, rightX * tanHalf, rightY * tanHalf, cols, maxDist);
+  E.maze_mark_seen();
+
+  buildWalls(cols);
+  buildFloors();
+  buildDoorLeaves();
+  buildSprites(time);
+  uploadLightmap();
+
+  gl.viewport(0, 0, viewW, viewH);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  const f = 1 / tanHalf, aspect = viewW / viewH;
+  gl.useProgram(progMain);
+  gl.uniform1f(U.uF, f); gl.uniform1f(U.uAspect, aspect);
+  gl.uniform1f(U.uNear, 0.06); gl.uniform1f(U.uFar, 48);
+  gl.uniform1f(U.uFlicker, flicker(time));
+  gl.uniform1f(U.uFog, CFG.fog);
+  gl.uniform1f(U.uGrain, CFG.grain);
+  gl.uniform1f(U.uVig, CFG.vignette);
+  gl.uniform1f(U.uBoost, state.torchBoost > 0 ? 0.5 : 0);
+  gl.uniform1f(U.uTime, (time * 13.7) % 1000);
+  gl.uniform2f(U.uRes, viewW, viewH);
+  gl.uniform1i(U.uTex, 0);
+  gl.uniform1i(U.uLight, 1);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, texLight);
+  gl.activeTexture(gl.TEXTURE0);
+
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+  drawMesh(mFloor, texFloor);
+  drawMesh(mCeil, texCeil);
+  drawMesh(mWall, texWall);
+  drawMesh(mDoor, texDoor);
+  drawMesh(mLeaves, texDoor);
+
+  /* additive flame sprites: sconces and the shrine */
+  gl.useProgram(progSprite);
+  gl.uniform1f(US.uF, f); gl.uniform1f(US.uAspect, aspect);
+  gl.uniform1f(US.uNear, 0.06); gl.uniform1f(US.uFar, 48);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.depthMask(false);
+  if (mSprite.n) {
+    gl.bindVertexArray(vaoSprite);
+    gl.bindBuffer(gl.ARRAY_BUFFER, _bufSprite);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, mSprite.view());
+    gl.drawArrays(gl.TRIANGLES, 0, mSprite.n / 6);
+  }
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(null);
+
+  drawVeil(time);
+}
+
+/* soft warm bloom + vignette on the low-res overlay canvas */
+function drawVeil(time) {
+  if (!vctx) return;
+  const w = veil.width, h = veil.height;
+  vctx.clearRect(0, 0, w, h);
+  const fl = flicker(time);
+  const g = vctx.createRadialGradient(w / 2, h * 0.5, 0, w / 2, h * 0.5, Math.max(w, h) * 0.62);
+  g.addColorStop(0, `rgba(255,150,60,${0.10 * fl})`);
+  g.addColorStop(0.35, `rgba(180,90,30,${0.045 * fl})`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  vctx.fillStyle = g; vctx.fillRect(0, 0, w, h);
+  const v = vctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.28, w / 2, h / 2, Math.max(w, h) * 0.72);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, `rgba(0,0,0,${0.55 * CFG.vignette})`);
+  vctx.fillStyle = v; vctx.fillRect(0, 0, w, h);
+}
+
+/* ============================================================ door swing */
+/* Doors animate toward a desired state held in JS (state.doorTarget); the
+ * kernel's own doorAnim is the single source of truth for what is drawn and
+ * what blocks you: the DDA tests rays against the leaf and maze_try_move
+ * tests the swept panel, so what you see and what stops you are the same
+ * number.  maze_door_set() flips solidity only once the leaf clears. */
+function updateDoors(dt) {
+  const E = state.wasm;
+  if (!state.doorTarget.size) return;
+  const speed = 2.1;
+  const half = CFG.playerR + CFG.wallR + 2;
+  const pcx = state.px | 0, pcy = state.py | 0;
+  let moving = 0;
+  for (const [id, want] of state.doorTarget) {
+    const x = id % state.W, y = (id / state.W) | 0;
+    if (Math.abs(x - pcx) > half || Math.abs(y - pcy) > half) continue;
+    if (state.grid[id] !== TILE.DOOR) { state.doorTarget.delete(id); continue; }
+    const cur = state.doorAnim[id];
+    if (Math.abs(cur - want) < 0.004) {
+      if (cur !== want) E.maze_door_anim(x, y, want);
+      E.maze_door_set(x, y, want > 0.5 ? 1 : 0);
+      continue;
+    }
+    const step = speed * dt;
+    const nv = cur < want ? Math.min(want, cur + step) : Math.max(want, cur - step);
+    E.maze_door_anim(x, y, nv);
+    E.maze_door_set(x, y, nv > 0.55 ? 1 : 0);
+    moving = 1;
+  }
+  if (moving) sfx.door();
+}
+
+/* ============================================================= movement */
+const keys = new Set();
+let bobPhase = 0, bobAmt = 0;
+
+function tryInteract() {
+  // the door directly ahead, the one we are standing in, or one a pace beyond
+  const cx = state.px | 0, cy = state.py | 0;
+  const probes = [[cx, cy],
+                  [Math.floor(state.px + dirX * 0.9), Math.floor(state.py + dirY * 0.9)],
+                  [Math.floor(state.px + dirX * 1.7), Math.floor(state.py + dirY * 1.7)]];
+  for (const [x, y] of probes) {
+    if (x < 0 || y < 0 || x >= state.W || y >= state.H) continue;
+    const id = y * state.W + x;
+    if (state.grid[id] !== TILE.DOOR) continue;
+    const shut = state.doorAnim[id] < 0.5;
+    state.doorTarget.set(id, shut ? 1 : 0);
+    toast(shut ? 'the door grinds open' : 'the door swings shut', 1500);
+    return true;
+  }
+  // shrine
+  for (const s of state.shrines) {
+    const dx = s.x - state.px, dy = s.y - state.py;
+    if (dx * dx + dy * dy < 1.4) {
+      state.torchBoost = 22;
+      sfx.shrine();
+      toast('the shrine kindles your torch', 2600);
+      return true;
+    }
+  }
+  return false;
+}
+
+function tryStairs() {
+  const list = state.depth > 1 ? state.stairUp : state.stairDown;
+  for (const s of list) {
+    const dx = s.x - state.px, dy = s.y - state.py;
+    if (dx * dx + dy * dy < 1.0) { descend(s); return true; }
+  }
+  toast('no stair here', 1100);
+  return false;
+}
+
+/* Stairs move you between the up and down markers of the same maze — the
+ * two ends of one shaft. */
+function descend(s) {
+  const goingDown = state.depth === 1;
+  const target = goingDown ? state.stairUp : state.stairDown;
+  if (!target.length) { toast('the way is sealed', 1400); return; }
+  // nearest stair of the opposite kind, so the shaft feels connected
+  let best = target[0], bd = Infinity;
+  for (const t of target) {
+    const d = (t.x - s.x) ** 2 + (t.y - s.y) ** 2;
+    if (d < bd) { bd = d; best = t; }
+  }
+  $('fade').classList.add('on');
+  sfx.stairs();
+  setTimeout(() => {
+    state.depth += goingDown ? 1 : -1;
+    state.px = best.x; state.py = best.y;
+    // face away from the wall the stair is set in
+    const E = state.wasm;
+    const x = best.x | 0, y = best.y | 0;
+    for (let k = 0; k < 4; k++)
+      if (E.maze_solid(x + DXF[k], y + DYF[k])) state.yaw = Math.atan2(-DXF[k], -DYF[k]);
+    updateHud();
+    $('fade').classList.remove('on');
+    toast(goingDown ? 'you descend' : 'you climb', 1800);
+  }, 420);
+}
+
+function move(dt) {
+  const run = keys.has('shift') ? CFG.run : 1;
+  const sp = CFG.speed * run * dt;
+  let mx = 0, my = 0;
+  if (keys.has('w')) { mx += dirX; my += dirY; }
+  if (keys.has('s')) { mx -= dirX; my -= dirY; }
+  if (keys.has('d')) { mx += rightX; my += rightY; }
+  if (keys.has('a')) { mx -= rightX; my -= rightY; }
+  const mag = Math.hypot(mx, my);
+  if (mag > 1e-6) {
+    mx = (mx / mag) * sp; my = (my / mag) * sp;
+    const ox = state.px, oy = state.py;
+    const blocked = state.wasm.maze_try_move(ox, oy, state.px + mx, state.py + my, CFG.radius);
+    if (blocked & 1) { /* x blocked */ } else state.px += mx;
+    if (blocked & 2) { /* y blocked */ } else state.py += my;
+    // last resort: try each axis alone so a diagonal input still slides
+    if (blocked === 3) {
+      if (!(state.wasm.maze_try_move(ox, oy, ox + mx, oy, CFG.radius) & 1)) state.px += mx;
+      if (!(state.wasm.maze_try_move(ox, oy, ox, oy + my, CFG.radius) & 2)) state.py += my;
+    }
+    const moved = Math.hypot(state.px - ox, state.py - oy);
+    bobAmt = lerp(bobAmt, Math.min(1, moved / (sp + 1e-6)) * run, 0.18);
+    bobPhase += moved * 3.4;
+    if (moved > 1e-5) {
+      const t = performance.now();
+      if (t - state.lastStep > (run > 1 ? 260 : 360)) { state.lastStep = t; sfx.step(run > 1); }
+    }
+  } else {
+    bobAmt = lerp(bobAmt, 0, 0.12);
+  }
+  eyeH = CFG.eye + (CFG.bob ? Math.sin(bobPhase) * 0.028 * bobAmt : 0);
+  if (bobAmt > 0.05) sfx.breath(bobAmt);
+  if (state.torchBoost > 0) state.torchBoost -= dt;
+}
+
+/* ================================================================ audio */
+const sfx = {
+  ctx: null, master: null, noise: null, breathGain: null, droneGain: null, _door: 0,
+  init() {
+    if (this.ctx || !CFG.audio) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.55;
+    this.master.connect(this.ctx.destination);
+
+    // brown-ish noise bed, low-passed: the sound of a stone room
+    const len = this.ctx.sampleRate * 2;
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      last = (last + 0.02 * w) / 1.02;
+      d[i] = last * 3.2;
+    }
+    this.noiseBuf = buf;
+
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 0.6;
+    this.droneGain = this.ctx.createGain(); this.droneGain.gain.value = 0.10;
+    src.connect(lp); lp.connect(this.droneGain); this.droneGain.connect(this.master);
+    src.start();
+
+    // two detuned sines: the shaft's breath
+    const o1 = this.ctx.createOscillator(), o2 = this.ctx.createOscillator();
+    o1.type = 'sine'; o2.type = 'sine';
+    o1.frequency.value = 58; o2.frequency.value = 87;
+    const g = this.ctx.createGain(); g.gain.value = 0.035;
+    const lp2 = this.ctx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 220;
+    o1.connect(g); o2.connect(g); g.connect(lp2); lp2.connect(this.master);
+    o1.start(); o2.start();
+
+    this.breathGain = this.ctx.createGain(); this.breathGain.gain.value = 0;
+    const bs = this.ctx.createBufferSource(); bs.buffer = buf; bs.loop = true;
+    const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 260; bp.Q.value = 1.1;
+    bs.connect(bp); bp.connect(this.breathGain); this.breathGain.connect(this.master);
+    bs.start();
+  },
+  resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); },
+  step(running) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource(); src.buffer = this.noiseBuf;
+    src.playbackRate.value = 0.8 + Math.random() * 0.5;
+    const f = this.ctx.createBiquadFilter(); f.type = 'lowpass';
+    f.frequency.value = running ? 900 : 620;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(running ? 0.30 : 0.19, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.20);
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t + 0.25);
+  },
+  door() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource(); src.buffer = this.noiseBuf;
+    src.playbackRate.value = 0.42;
+    const f = this.ctx.createBiquadFilter(); f.type = 'bandpass';
+    f.frequency.setValueAtTime(180, t); f.frequency.linearRampToValueAtTime(90, t + 0.7);
+    f.Q.value = 3.5;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.42, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t + 0.9);
+    // iron groan
+    const o = this.ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(52, t + 0.6);
+    const of = this.ctx.createBiquadFilter(); of.type = 'lowpass'; of.frequency.value = 500;
+    const og = this.ctx.createGain();
+    og.gain.setValueAtTime(0.09, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+    o.connect(of); of.connect(og); og.connect(this.master);
+    o.start(t); o.stop(t + 0.75);
+  },
+  stairs() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(320, t); o.frequency.exponentialRampToValueAtTime(70, t + 0.9);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.22, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.0);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + 1.05);
+  },
+  shrine() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    [392, 523, 659].forEach((hz, i) => {
+      const o = this.ctx.createOscillator(); o.type = 'triangle';
+      o.frequency.value = hz;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + i * 0.07);
+      g.gain.linearRampToValueAtTime(0.13, t + i * 0.07 + 0.06);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.07 + 1.5);
+      o.connect(g); g.connect(this.master); o.start(t + i * 0.07); o.stop(t + i * 0.07 + 1.6);
+    });
+  },
+  breath(amt) {
+    if (!this.breathGain) return;
+    this.breathGain.gain.value = 0.02 + amt * 0.05;
+  },
+};
+
+/* ============================================================== minimap */
+let miniBase = null, miniCanvas = null, miniCtx = null, miniScale = 4;
+
+function buildMinimapBase() {
+  if (!state.W) return;
+  miniScale = Math.max(2, Math.min(6, Math.floor(360 / Math.max(state.W, state.H))));
+  const w = state.W * miniScale, h = state.H * miniScale;
+  miniBase = document.createElement('canvas');
+  miniBase.width = w; miniBase.height = h;
+  miniCanvas = $('minimap');
+  miniCanvas.width = w; miniCanvas.height = h;
+  miniCtx = miniCanvas.getContext('2d');
+  const c = miniBase.getContext('2d');
+  c.fillStyle = '#05060a';
+  c.fillRect(0, 0, w, h);
+  const E = state.wasm;
+  for (let y = 0; y < state.H; y++) {
+    for (let x = 0; x < state.W; x++) {
+      const t = state.grid[y * state.W + x];
+      if (t === TILE.WALL) {
+        c.fillStyle = '#1b212c';
+        c.fillRect(x * miniScale, y * miniScale, miniScale, miniScale);
+        // a hair of relief so the stonework reads on the map
+        c.fillStyle = '#262f3f';
+        c.fillRect(x * miniScale, y * miniScale, miniScale, 1);
+      } else {
+        c.fillStyle = '#0a0d14';
+        c.fillRect(x * miniScale, y * miniScale, miniScale, miniScale);
+      }
+      if (t === TILE.DOOR) {
+        c.fillStyle = '#8a5a2c';
+        const ax = E.maze_door_axis(x, y);
+        if (ax === 0) c.fillRect(x * miniScale, y * miniScale + miniScale / 2 - 1, miniScale, 2);
+        else c.fillRect(x * miniScale + miniScale / 2 - 1, y * miniScale, 2, miniScale);
+      }
+      if (t === TILE.UP || t === TILE.DOWN) {
+        c.fillStyle = t === TILE.UP ? '#d9c48a' : '#7fb0c8';
+        c.fillRect(x * miniScale + 1, y * miniScale + 1, miniScale - 2, miniScale - 2);
+      }
+      if (t === TILE.SHRINE) { c.fillStyle = '#e8a13a'; c.fillRect(x * miniScale, y * miniScale, miniScale, miniScale); }
+    }
+  }
+  // sconces
+  c.fillStyle = '#ffae4d';
+  for (const t of state.torches) c.fillRect(t.x * miniScale + miniScale / 2 - 1, t.y * miniScale + miniScale / 2 - 1, 2, 2);
+}
+
+function drawMinimap() {
+  if (!CFG.minimap || !miniCtx) { miniCanvas.style.display = 'none'; return; }
+  miniCanvas.style.display = 'block';
+  const w = miniCanvas.width, h = miniCanvas.height;
+  miniCtx.clearRect(0, 0, w, h);
+  miniCtx.drawImage(miniBase, 0, 0);
+  // fog of war: only charted cells are drawn over the base
+  miniCtx.globalCompositeOperation = 'destination-in';
+  miniCtx.fillStyle = '#fff';
+  for (let y = 0; y < state.H; y++) {
+    const row = y * state.W;
+    let runStart = -1;
+    for (let x = 0; x <= state.W; x++) {
+      const seen = x < state.W && state.seen[row + x];
+      if (seen && runStart < 0) runStart = x;
+      if (!seen && runStart >= 0) {
+        miniCtx.fillRect(runStart * miniScale, y * miniScale, (x - runStart) * miniScale, miniScale);
+        runStart = -1;
+      }
+    }
+  }
+  miniCtx.globalCompositeOperation = 'source-over';
+
+  // torch pools on the map
+  const R = (CFG.playerR + CFG.wallR) * miniScale;
+  const g = miniCtx.createRadialGradient(state.px * miniScale, state.py * miniScale, 0,
+                                         state.px * miniScale, state.py * miniScale, Math.max(6, R));
+  g.addColorStop(0, 'rgba(255,178,84,0.30)');
+  g.addColorStop(1, 'rgba(255,178,84,0)');
+  miniCtx.fillStyle = g;
+  miniCtx.beginPath();
+  miniCtx.arc(state.px * miniScale, state.py * miniScale, Math.max(6, R), 0, 7);
+  miniCtx.fill();
+
+  // heading
+  const px = state.px * miniScale, py = state.py * miniScale;
+  miniCtx.save();
+  miniCtx.translate(px, py);
+  miniCtx.rotate(-state.yaw);
+  miniCtx.fillStyle = '#f2e3c2';
+  miniCtx.beginPath();
+  miniCtx.moveTo(0, -miniScale * 1.6);
+  miniCtx.lineTo(miniScale * 0.9, miniScale * 1.1);
+  miniCtx.lineTo(0, miniScale * 0.5);
+  miniCtx.lineTo(-miniScale * 0.9, miniScale * 1.1);
+  miniCtx.closePath();
+  miniCtx.fill();
+  miniCtx.restore();
+}
+
+/* ================================================================== HUD */
+const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
+/* the compass is a scrolling tape: a tick every 15°, labelled at the
+ * cardinals, slid sideways so the amber needle always marks your heading */
+function buildCompass() {
+  const host = $('compassTicks');
+  host.innerHTML = '';
+  for (let d = 0; d < 360; d += 15) {
+    const t = document.createElement('div');
+    t.className = 'tick' + (d % 90 === 0 ? ' major' : '');
+    t.dataset.deg = d;
+    if (d % 45 === 0) {
+      const s = document.createElement('span');
+      s.textContent = CARDINALS[(d / 45) % 8];
+      t.appendChild(s);
+    }
+    host.appendChild(t);
+  }
+}
+
+function updateHud() {
+  const E = state.wasm;
+  $('sDepth').textContent = state.depth;
+  $('sTorch').textContent = CFG.playerR;
+  $('sWall').textContent = CFG.wallR;
+  $('sSeen').textContent = E.maze_seen_count();
+  $('sDoors').textContent = E.maze_door_count();
+  $('sPos').textContent = `x ${state.px.toFixed(1)} · y ${state.py.toFixed(1)}`;
+
+  const deg = (state.yaw * 180 / Math.PI + 360) % 360;
+  $('cardinal').textContent = CARDINALS[Math.round(deg / 45) % 8];
+  const host = $('compassTicks');
+  const per = host.clientWidth / 360;
+  for (const t of host.children) {
+    let d = (+t.dataset.deg) - deg;
+    if (d < -180) d += 360;
+    if (d > 180) d -= 360;
+    t.style.left = (host.clientWidth / 2 + d * per) + 'px';
+    t.style.opacity = Math.abs(d) > 175 ? 0 : 1;
+  }
+
+  const bar = $('torchBar');
+  const fl = 0.86 + 0.14 * flicker(performance.now() / 1000);
+  bar.style.width = `${Math.round(fl * 100)}%`;
+  bar.style.background = state.torchBoost > 0
+    ? 'linear-gradient(90deg,#fff3c8,#ffd27a 40%,#ff8a2c 80%)'
+    : 'linear-gradient(90deg,#ffe6b0,#ffb347 45%,#e0641a 85%)';
+
+  // contextual prompt
+  let prompt = '';
+  const cx = state.px | 0, cy = state.py | 0;
+  const probes = [[cx, cy],
+                  [Math.floor(state.px + dirX * 0.9), Math.floor(state.py + dirY * 0.9)],
+                  [Math.floor(state.px + dirX * 1.7), Math.floor(state.py + dirY * 1.7)]];
+  for (const [x, y] of probes) {
+    if (x < 0 || y < 0 || x >= state.W || y >= state.H) continue;
+    const id = y * state.W + x;
+    if (state.grid[id] !== TILE.DOOR) continue;
+    prompt = state.doorAnim[id] < 0.5 ? '[E] open the door' : '[E] close the door';
+    break;
+  }
+  if (!prompt) {
+    for (const s of state.shrines)
+      if ((s.x - state.px) ** 2 + (s.y - state.py) ** 2 < 1.4) { prompt = '[E] touch the shrine'; break; }
+    if (!prompt) {
+      const list = state.depth > 1 ? state.stairUp : state.stairDown;
+      for (const s of list)
+        if ((s.x - state.px) ** 2 + (s.y - state.py) ** 2 < 1.0) {
+          prompt = state.depth > 1 ? '[F] climb' : '[F] descend';
+          break;
+        }
+    }
+  }
+  const p = $('prompt');
+  p.textContent = prompt;
+  p.classList.toggle('on', prompt !== '');
+}
+
+/* ============================================================ settings UI */
+const FIELDS = [
+  ['playerR', 'player torch', 1, 8, 1, 'squares of light around you'],
+  ['wallR', 'wall sconces', 0, 6, 1, 'radius of every wall torch'],
+  ['spacing', 'sconce spacing', 0, 24, 1, 'blocks between wall torches (0 = none)'],
+  ['minGap', 'sconce crowding', 1, 10, 1, 'minimum gap between two sconces'],
+  ['falloff', 'light falloff', 1, 4, 1, '1 linear · 2 torchlight · 3 soft · 4 deep'],
+  ['fov', 'field of view', 45, 110, 1, 'degrees'],
+  ['speed', 'walk speed', 0.8, 5, 0.1, 'squares per second'],
+  ['run', 'run multiplier', 1.1, 2.6, 0.05, ''],
+  ['sens', 'look sensitivity', 0.2, 3, 0.05, ''],
+  ['radius', 'body radius', 0.1, 0.45, 0.01, 'collision clearance'],
+  ['eye', 'eye height', 0.35, 1.0, 0.01, ''],
+  ['fog', 'darkness', 0.2, 2.2, 0.05, ''],
+  ['grain', 'film grain', 0, 0.14, 0.005, ''],
+  ['vignette', 'vignette', 0, 1.2, 0.02, ''],
+  ['resScale', 'render scale', 0.5, 1.6, 0.05, 'internal resolution'],
+  ['cols', 'ray columns', 240, 1280, 20, 'cast rays per frame'],
+];
+const TOGGLES = [['minimap', 'minimap'], ['audio', 'ambience'], ['bob', 'head bob'],
+  ['flicker', 'torch flicker'], ['turnSmooth', 'smooth arrow turn']];
+
+function buildSettings() {
+  const host = $('fields');
+  host.innerHTML = '';
+  for (const [key, label, min, max, step, hint] of FIELDS) {
+    const row = document.createElement('div');
+    row.className = 'field';
+    const val = CFG[key];
+    row.innerHTML = `<label for="f_${key}">${label}
+        <span class="val" id="v_${key}">${val}</span></label>
+      <input id="f_${key}" type="range" min="${min}" max="${max}" step="${step}" value="${val}">
+      ${hint ? `<div class="hint">${hint}</div>` : ''}`;
+    host.appendChild(row);
+    const input = row.querySelector('input');
+    input.addEventListener('input', () => {
+      CFG[key] = parseFloat(input.value);
+      $('v_' + key).textContent = CFG[key];
+      onConfigChanged(key);
+    });
+  }
+  for (const [key, label] of TOGGLES) {
+    const row = document.createElement('div');
+    row.className = 'field toggle';
+    row.innerHTML = `<label><input id="t_${key}" type="checkbox" ${CFG[key] ? 'checked' : ''}> ${label}</label>`;
+    host.appendChild(row);
+    row.querySelector('input').addEventListener('change', (e) => {
+      CFG[key] = e.target.checked;
+      if (key === 'audio') { if (CFG.audio) { sfx.init(); sfx.resume(); } else if (sfx.ctx) sfx.ctx.suspend(); }
+      onConfigChanged(key);
+    });
+  }
+}
+
+function collectTorches() {
+  const E = state.wasm;
+  state.torches.length = 0;
+  for (let i = 0; i < E.maze_torch_count(); i++) {
+    const w = E.maze_torch_wall(i), o = E.maze_torch_open(i), face = E.maze_torch_face(i);
+    const ox = (o % state.W) + 0.5, oy = ((o / state.W) | 0) + 0.5;
+    state.torches.push({
+      x: ox, y: oy, wall: w, open: o, face: face,
+      ox: ox, oy: oy,
+      wx: (w % state.W) + 0.5, wy: ((w / state.W) | 0) + 0.5,
+    });
+  }
+}
+
+function onConfigChanged(key) {
+  const E = state.wasm;
+  if (key === 'spacing' || key === 'minGap') {
+    E.maze_set_spacing(CFG.spacing, CFG.minGap);
+    E.maze_finalize();
+    collectTorches();
+    buildMinimapBase();
+  }
+  if (key === 'falloff') E.maze_set_falloff(CFG.falloff);
+  if (key === 'resScale') resize();
+  if (key === 'fov') updateBasis();
+}
+
+/* ================================================================ input */
+let locked = false, started = false;
+
+function setLocked(v) {
+  locked = v;
+  $('hud').classList.toggle('paused', !v && started);
+}
+
+window.addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  if (k === 'escape') {
+    if (document.querySelector('.overlay:not(.hidden)')) closeOverlays();
+    else openOverlay('settings');
+    e.preventDefault();
+    return;
+  }
+  if (!started) return;
+  if (k === 'shift') { keys.add('shift'); return; }
+  if (k === 'e') { if (!e.repeat) tryInteract(); e.preventDefault(); return; }
+  if (k === 'f') { if (!e.repeat) tryStairs(); return; }
+  if (k === 'tab') {
+    CFG.minimap = !CFG.minimap;
+    const t = $('t_minimap'); if (t) t.checked = CFG.minimap;
+    e.preventDefault();
+    return;
+  }
+  /* arrows turn like a classic crawler, WASD walks.  One press = one turn:
+   * key repeat is swallowed here, and nothing re-fires while a key is held. */
+  if (k === 'arrowleft') { if (!e.repeat) turn(-1); e.preventDefault(); return; }
+  if (k === 'arrowright') { if (!e.repeat) turn(1); e.preventDefault(); return; }
+  if (k === 'w' || k === 'arrowup') { keys.add('w'); e.preventDefault(); return; }
+  if (k === 's' || k === 'arrowdown') { keys.add('s'); e.preventDefault(); return; }
+  if (k === 'a') { keys.add('a'); return; }
+  if (k === 'd') { keys.add('d'); return; }
+  if (k === ' ') e.preventDefault();
+});
+window.addEventListener('keyup', (e) => {
+  const k = e.key.toLowerCase();
+  if (k === 'shift') keys.delete('shift');
+  if (k === 'w' || k === 'arrowup') keys.delete('w');
+  if (k === 's' || k === 'arrowdown') keys.delete('s');
+  if (k === 'a') keys.delete('a');
+  if (k === 'd') keys.delete('d');
+});
+
+/* One keypress, one 20° turn.  The rotation is never re-applied on its own: a
+ * press queues at most one turn, and the queue is drained over a handful of
+ * frames purely to keep the motion from snapping.  Holding an arrow does
+ * nothing after that single turn. */
+const TURN_STEP = Math.PI / 9;      /* 20° per keypress */
+const TURN_SLIDE = 4;               /* frames the glide is spread over */
+let turnRemain = 0;                 /* radians still owed by the last press */
+
+function wrapYaw() {
+  if (state.yaw > Math.PI) state.yaw -= 2 * Math.PI;
+  if (state.yaw < -Math.PI) state.yaw += 2 * Math.PI;
+}
+
+function turn(dir) {
+  if (!CFG.turnSmooth) {
+    state.yaw += dir * TURN_STEP;
+    wrapYaw();
+    updateBasis();
+    return;
+  }
+  /* bank the turn instead of restarting it, so fast tapping still lands
+   * exactly one step per press rather than clipping the previous one */
+  turnRemain = clamp(turnRemain + dir * TURN_STEP, -TURN_STEP, TURN_STEP);
+}
+
+function runTurn() {
+  if (!turnRemain) return;
+  const step = Math.sign(turnRemain) * Math.min(TURN_STEP / TURN_SLIDE, Math.abs(turnRemain));
+  state.yaw += step;
+  wrapYaw();
+  updateBasis();
+  turnRemain -= step;
+  if (Math.abs(turnRemain) < 1e-6) turnRemain = 0;
+}
+
+window.addEventListener('mousemove', (e) => {
+  if (!locked) return;
+  state.yaw += e.movementX * 0.0022 * CFG.sens;
+  if (state.yaw > Math.PI) state.yaw -= 2 * Math.PI;
+  if (state.yaw < -Math.PI) state.yaw += 2 * Math.PI;
+  updateBasis();
+});
+document.addEventListener('pointerlockchange', () => setLocked(document.pointerLockElement === canvas));
+document.addEventListener('pointerlockerror', () => toast('pointer lock refused — click the view', 2200));
+
+function requestLock() {
+  try {
+    const p = canvas.requestPointerLock && canvas.requestPointerLock();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (e) { /* older browsers */ }
+}
+
+/* ============================================================== overlays */
+function openOverlay(which) {
+  if (which === 'settings') { $('settings').classList.remove('hidden'); if (locked) document.exitPointerLock(); }
+  else { $('title').classList.remove('hidden'); if (locked) document.exitPointerLock(); }
+}
+function closeOverlays() {
+  $('settings').classList.add('hidden');
+  if (!started) return;
+  requestLock();
+}
+
+/* ================================================================= boot */
+let lastT = 0, frames = 0, fpsT = 0;
+
+function frame(t) {
+  const time = t / 1000;
+  let dt = Math.min(0.05, time - lastT);
+  lastT = time;
+  if (started && !document.querySelector('.overlay:not(.hidden)')) {
+    runTurn();
+    move(dt);
+    updateDoors(dt);
+  }
+  if (state.W) {
+    render(time);
+    drawMinimap();
+    updateHud();
+  }
+  frames++;
+  if (time - fpsT > 0.5) { state.fps = Math.round(frames / (time - fpsT)); frames = 0; fpsT = time; $('sFps').textContent = state.fps; }
+  requestAnimationFrame(frame);
+}
+
+async function loadDefaultMap() {
+  try {
+    const r = await fetch('maze1.txt', { cache: 'no-store' });
+    if (r.ok) {
+      const t = await r.text();
+      if (t && t.trim()) return t;
+    }
+  } catch (e) { /* file:// blocks fetch — use the embedded copy */ }
+  const b64 = $('mazeFallback').textContent.trim();
+  if (b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+  return fallbackMaze();
+}
+
+function fallbackMaze() {
+  const W = 40, H = 24;
+  const g = [];
+  for (let y = 0; y < H; y++) g.push(new Array(W).fill('▓'));
+  const carve = (x, y) => { g[y][x] = ' '; };
+  const stack = [[1, 1]];
+  g[1][1] = ' ';
+  const seen = new Set(['1,1']);
+  while (stack.length) {
+    const [x, y] = stack[stack.length - 1];
+    const opts = [[2, 0], [-2, 0], [0, 2], [0, -2]].filter(([dx, dy]) => {
+      const nx = x + dx, ny = y + dy;
+      return nx > 0 && ny > 0 && nx < W - 1 && ny < H - 1 && !seen.has(nx + ',' + ny);
+    });
+    if (!opts.length) { stack.pop(); continue; }
+    const [dx, dy] = opts[(Math.random() * opts.length) | 0];
+    carve(x + dx / 2, y + dy / 2); carve(x + dx, y + dy);
+    seen.add((x + dx) + ',' + (y + dy));
+    stack.push([x + dx, y + dy]);
+  }
+  g[1][1] = '^';
+  return g.map(r => r.join('')).join('\n');
+}
+
+async function boot() {
+  try {
+    await acquireWasm();
+    initGL();
+    buildSettings();
+    buildCompass();
+    resize();
+    const text = await loadDefaultMap();
+    loadMap(text, 'maze1.txt');
+    state.mapText = text;
+    updateHud();
+    started = false;
+    requestAnimationFrame(frame);
+  } catch (e) {
+    console.error(e);
+    $('bootErr').textContent = 'could not start: ' + (e && e.message ? e.message : e);
+  }
+}
+
+/* ---------------------------------------------------- map upload wiring */
+const drop = $('drop'), fileInput = $('file');
+$('pick').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) await acceptFile(f);
+});
+async function acceptFile(f) {
+  try {
+    const text = await f.text();
+    loadMap(text, f.name);
+    state.mapText = text;
+    toast(`loaded ${f.name} — ${state.W}×${state.H}`, 2600);
+  } catch (err) {
+    toast('could not read that file: ' + err.message, 3000);
+  }
+}
+for (const ev of ['dragenter', 'dragover']) {
+  window.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('hot'); });
+}
+for (const ev of ['dragleave', 'drop']) {
+  window.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('hot'); });
+}
+window.addEventListener('drop', async (e) => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) await acceptFile(f);
+});
+
+$('start').addEventListener('click', () => {
+  $('title').classList.add('hidden');
+  started = true;
+  sfx.init(); sfx.resume();
+  requestLock();
+  updateHud();
+});
+$('openSettings').addEventListener('click', () => openOverlay('settings'));
+$('closeSettings').addEventListener('click', () => { $('settings').classList.add('hidden'); if (started) requestLock(); });
+$('resetMap').addEventListener('click', () => {
+  if (state.mapText) { loadMap(state.mapText, state.mapName); toast('map re-seeded', 1600); }
+});
+$('wipeMap').addEventListener('click', () => {
+  state.wasm.maze_forget();
+  state.seenTotal = 0;
+  toast('charted area cleared', 1600);
+});
+window.addEventListener('resize', resize);
+
+boot();
+</script>
+</body>
+</html>
