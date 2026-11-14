@@ -29,6 +29,8 @@
   /* ---------------------------------------------------------------- scene */
   #gl,#veil{position:fixed;inset:0;width:100%;height:100%}
   #veil{pointer-events:none;z-index:3}
+  #gl{cursor:crosshair}
+  body.locked #gl{cursor:none}
 
   /* ------------------------------------------------------------------ hud */
   #hud{position:fixed;inset:0;z-index:4;pointer-events:none}
@@ -92,6 +94,14 @@
     backdrop-filter:blur(6px);white-space:nowrap;
   }
   #prompt.on{opacity:1}
+  #relock{
+    position:absolute;left:50%;top:56%;transform:translate(-50%,-6px);
+    font-size:12px;letter-spacing:.24em;text-transform:uppercase;
+    padding:9px 18px;border:1px solid rgba(232,163,61,.42);background:rgba(0,0,0,.58);
+    color:var(--amber);opacity:0;transition:opacity .25s;white-space:nowrap;
+    backdrop-filter:blur(6px);
+  }
+  #relock.on{opacity:1}
   #toast{
     position:absolute;left:50%;top:22%;transform:translate(-50%,-8px);
     font-size:19px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber);
@@ -158,6 +168,8 @@
     font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--bone-dim);
   }
   .field label output{color:var(--amber);letter-spacing:.1em;font-size:12px}
+  .field label > span{display:inline-flex;align-items:center;gap:2px}
+  .field.toggle label{justify-content:flex-start;align-items:center;gap:10px}
   .field .hint{font-size:11px;color:#5f5a52;margin-top:5px;line-height:1.6}
   input[type=range]{
     -webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;margin-top:8px;
@@ -171,6 +183,21 @@
   input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radius:50%;background:var(--amber);cursor:pointer}
   .toggle{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:12px;color:var(--bone-dim);letter-spacing:.14em;text-transform:uppercase;cursor:pointer}
   .toggle input{accent-color:var(--amber);width:15px;height:15px}
+  .field .info{
+    display:inline-block;width:15px;height:15px;line-height:14px;margin-left:10px;padding:0;
+    border:1px solid rgba(217,207,188,.3);border-radius:50%;background:transparent;
+    font:inherit;font-size:10px;text-align:center;color:var(--bone-dim);cursor:help;
+  }
+  .field .info:hover,.field .info:focus{border-color:var(--amber);color:var(--amber)}
+  #tipbox{
+    position:fixed;z-index:12;max-width:330px;padding:12px 15px;
+    border:1px solid var(--rule);background:rgba(9,9,13,.97);
+    box-shadow:0 18px 46px rgba(0,0,0,.72);
+    font-size:11.5px;line-height:1.72;letter-spacing:.05em;color:var(--bone-dim);
+    opacity:0;pointer-events:none;transition:opacity .16s;
+  }
+  #tipbox.on{opacity:1}
+  #tipbox b{display:block;color:var(--amber);font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;margin-bottom:6px}
   .keys{margin-top:26px;display:flex;flex-wrap:wrap;gap:8px 18px;font-size:12px;color:var(--bone-dim)}
   .keys kbd{
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
@@ -198,6 +225,7 @@
   </div>
   <div id="toast"></div>
   <div id="prompt"></div>
+  <div id="relock">click the view to take back the mouse</div>
   <div class="hud-bottom">
     <div class="torch-meter">
       <div class="cap">Flame reach</div>
@@ -240,8 +268,8 @@
     </div>
     <div class="fine">
       WASM raycast + lighting kernel, WebGL2 renderer. Maps up to 256×256.
-      Keyboard &amp; mouse: <b>WASD</b> move, <b>mouse</b> look, <b>E</b> doors/shrines,
-      <b>F</b> stairs, <b>Esc</b> settings.
+      Keyboard &amp; mouse: <b>WASD</b> move, <b>&larr; &rarr;</b> turn (hold to keep turning),
+      <b>mouse</b> look, <b>E</b> doors/shrines, <b>F</b> stairs, <b>Esc</b> settings.
     </div>
     <div class="err" id="bootErr"></div>
   </div>
@@ -257,6 +285,7 @@
       <div><kbd>Shift</kbd> run</div>
       <div><kbd>E</kbd> open / close door, touch shrine</div>
       <div><kbd>F</kbd> take the stairs</div>
+      <div><kbd>&larr;</kbd><kbd>&rarr;</kbd> turn &mdash; hold to keep turning</div>
       <div><kbd>Tab</kbd> map</div>
       <div><kbd>Esc</kbd> settings</div>
     </div>
@@ -267,6 +296,8 @@
     </div>
   </div>
 </div>
+
+<div id="tipbox"></div>
 
 <!-- embedded fallbacks, filled by tools/build-html.js -->
 <script id="mazeWasmB64" type="text/plain">AGFzbQEAAAABYQ9gAAF/YAJ/fwF/YAF/AX9gAABgA39/fwBgA39/fwF/YAJ/fwBgAX8AYAN/f30AYAJ/fwF9YAR9fX9/AX9gBH19f38AYAh9fX19fX1/fQF/YAR/f39/AX9gBX19fX19AX8CDgEDZW52Bm1lbXNldAAFAzU0AwABAAAAAAAAAAAAAAAAAAQBAQYHAAMAAAACAgICAgEBBAgJAQEKCwEBAQEAAQMADA0ADgUDAQAyBi8HfwBBgAgLfwBB0IjBAQt/AEGACAt/AEHQiMUBC38AQYCAyAELfwBBAAt/AEEBCweaBzsGbWVtb3J5AgARX193YXNtX2NhbGxfY3RvcnMAARBtYXplX2FwaV92ZXJzaW9uAAIJbWF6ZV9pbml0AAMGbWF6ZV93AAQGbWF6ZV9oAAUJbWF6ZV9sbV93AAYJbWF6ZV9sbV9oAAcNbWF6ZV9sbV9zY2FsZQAICG9mZl9ncmlkAAkIb2ZmX2Rvb3IACglvZmZfbGlnaHQACwhvZmZfc2VlbgAMCG9mZl9yYXlzAA0Nb2ZmX2Rvb3JfYW5pbQAODW9mZl9kb29yX2F4aXMADw5vZmZfZG9vcl9oaW5nZQAQDW1hemVfc2V0X2NlbGwAEQltYXplX2NlbGwAEgptYXplX3NvbGlkABMQbWF6ZV9zZXRfc3BhY2luZwAUEG1hemVfc2V0X2ZhbGxvZmYAFQxtYXplX2ZhbGxvZmYAFg1tYXplX2ZpbmFsaXplABcQbWF6ZV90b3JjaF9jb3VudAAYEW1hemVfc2hyaW5lX2NvdW50ABkPbWF6ZV9kb29yX2NvdW50ABoPbWF6ZV90b3JjaF93YWxsABsPbWF6ZV90b3JjaF9vcGVuABwPbWF6ZV90b3JjaF9mYWNlAB0QbWF6ZV9zaHJpbmVfY2VsbAAeDm1hemVfZG9vcl9jZWxsAB8NbWF6ZV9kb29yX2dldAAgEG1hemVfZG9vcl90b2dnbGUAIQ1tYXplX2Rvb3Jfc2V0ACIObWF6ZV9kb29yX2FuaW0AIxJtYXplX2Rvb3JfYW5pbV9nZXQAJA5tYXplX2Rvb3JfYXhpcwAlD21hemVfZG9vcl9oaW5nZQAmEm1hemVfY29tcHV0ZV9saWdodAAnE21hemVfbGlnaHRtYXBfbGlnaHQAKRJtYXplX2xpZ2h0bWFwX3dh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</script>
@@ -302,7 +333,8 @@ const CFG = {
   resScale: 1,         // internal resolution multiplier
   cols:      720,      // hard cap on traced columns
   sens:      1.0,
-  turnSmooth: 1,       // 1 = glide the 20° turn, 0 = snap it instantly
+  turnRate:  1.45,      // rad/s while an arrow key is held (~83 deg/s)
+  turnSmooth: 1,       // 1 = glide the turn, 0 = snap it instantly
   speed:     2.5,      // squares / second
   run:       1.75,
   radius:    0.29,     // player collision radius, in squares
@@ -347,6 +379,8 @@ const state = {
   torchPhase: 0,
   torchBoost: 0,        // shrine blessing, seconds remaining
   seenTotal: 0,
+  seenFresh: 0,
+  miniInkDirty: true,
   fps: 60,
 };
 
@@ -804,6 +838,24 @@ function initGL() {
   if (!gl) throw new Error('WebGL2 is not available in this browser');
   veil = $('veil'); vctx = veil.getContext('2d');
 
+  /* pointer lock is dropped whenever a dialog opens, a tab changes, or the
+   * browser simply hands the cursor back — clicking the view has to reclaim it.
+   * Bound here because the canvas element is not held until this point. */
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !started) return;
+    if (document.querySelector('.overlay:not(.hidden)')) return;
+    if (!locked) requestLock();
+  });
+
+  /* pointer lock is dropped whenever a dialog opens, a tab changes or the browser
+   * decides to hand the cursor back; clicking the view has to reclaim it.
+   * Bound here because `canvas` does not exist until this point. */
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !started) return;
+    if (document.querySelector('.overlay:not(.hidden)')) return;
+    if (!locked) requestLock();
+  });
+
   const m = link(VS_MAIN, FS_MAIN,
     ['uF', 'uAspect', 'uNear', 'uFar', 'uTex', 'uLight', 'uFlicker', 'uFog', 'uGrain', 'uVig', 'uBoost', 'uTime', 'uRes']);
   progMain = m.p; Object.assign(U, m.u);
@@ -1132,7 +1184,7 @@ function render(time) {
    * the sub-cells a light touched, the cast stops at the edge of the pool */
   E.maze_compute_light(state.px, state.py, CFG.playerR + (state.torchBoost > 0 ? 1 : 0), CFG.wallR);
   E.maze_cast(state.px, state.py, dirX, dirY, rightX * tanHalf, rightY * tanHalf, cols, maxDist);
-  E.maze_mark_seen();
+  state.seenFresh = E.maze_mark_seen();
 
   buildWalls(cols);
   buildFloors();
@@ -1226,12 +1278,14 @@ function updateDoors(dt) {
     if (Math.abs(cur - want) < 0.004) {
       if (cur !== want) E.maze_door_anim(x, y, want);
       E.maze_door_set(x, y, want > 0.5 ? 1 : 0);
+      state.miniInkDirty = true;
       continue;
     }
     const step = speed * dt;
     const nv = cur < want ? Math.min(want, cur + step) : Math.max(want, cur - step);
     E.maze_door_anim(x, y, nv);
     E.maze_door_set(x, y, nv > 0.55 ? 1 : 0);
+    if ((nv > 0.55 ? 1 : 0) !== (cur > 0.5 ? 1 : 0)) state.miniInkDirty = true;
     moving = 1;
   }
   if (moving) sfx.door();
@@ -1455,62 +1509,95 @@ const sfx = {
   },
 };
 
-/* ============================================================== minimap */
-let miniBase = null, miniCanvas = null, miniCtx = null, miniScale = 4;
+/* ============================================================== minimap
+ * The map is *drawn as it is discovered*: miniMem holds only the cells the
+ * torch has actually touched, so the paper fills in from the flame instead of
+ * showing a pre-drawn maze with a pointer on it.  miniInk is the same sheet
+ * with the door / stair / sconce marks baked in, so the per-frame cost is two
+ * blits plus the player arrow.  miniMask is scratch used to punch the newly
+ * charted cells into the sheet. */
+let miniBase = null, miniMem = null, miniInk = null, miniMask = null;
+let miniCanvas = null, miniCtx = null, miniScale = 4;
+let miniDirty = true;
+
+function resetMinimap() {
+  if (!miniCanvas) return;
+  const w = miniCanvas.width, h = miniCanvas.height;
+  miniCtx.globalCompositeOperation = 'source-over';
+  miniCtx.clearRect(0, 0, w, h);
+  miniMem.getContext('2d').clearRect(0, 0, w, h);
+  miniInk.getContext('2d').clearRect(0, 0, w, h);
+  miniMask.getContext('2d').clearRect(0, 0, w, h);
+  miniDirty = true;
+  miniStampX = -1;
+  state.miniInkDirty = true;
+}
 
 function buildMinimapBase() {
   if (!state.W) return;
   miniScale = Math.max(2, Math.min(6, Math.floor(360 / Math.max(state.W, state.H))));
   const w = state.W * miniScale, h = state.H * miniScale;
-  miniBase = document.createElement('canvas');
-  miniBase.width = w; miniBase.height = h;
+  const mk = () => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+  miniBase = mk(); miniMem = mk(); miniInk = mk(); miniMask = mk();
   miniCanvas = $('minimap');
   miniCanvas.width = w; miniCanvas.height = h;
+  miniCanvas.style.maxWidth = 'min(42vw, 380px)';
+  miniCanvas.style.maxHeight = 'min(42vh, 380px)';
   miniCtx = miniCanvas.getContext('2d');
+  miniDirty = true;
+  miniStampX = -1;
+
   const c = miniBase.getContext('2d');
-  c.fillStyle = '#05060a';
+  /* charted paper: floors read warm and dark, stone reads clearly against it,
+   * so a revealed corridor is legible instead of a smear of near-black */
+  c.fillStyle = '#04050a';
   c.fillRect(0, 0, w, h);
   const E = state.wasm;
   for (let y = 0; y < state.H; y++) {
     for (let x = 0; x < state.W; x++) {
       const t = state.grid[y * state.W + x];
+      const sx = x * miniScale, sy = y * miniScale;
       if (t === TILE.WALL) {
-        c.fillStyle = '#1b212c';
-        c.fillRect(x * miniScale, y * miniScale, miniScale, miniScale);
+        c.fillStyle = '#463b2d';
+        c.fillRect(sx, sy, miniScale, miniScale);
         // a hair of relief so the stonework reads on the map
-        c.fillStyle = '#262f3f';
-        c.fillRect(x * miniScale, y * miniScale, miniScale, 1);
+        c.fillStyle = '#6a5a44';
+        c.fillRect(sx, sy, miniScale, 1);
       } else {
-        c.fillStyle = '#0a0d14';
-        c.fillRect(x * miniScale, y * miniScale, miniScale, miniScale);
+        c.fillStyle = '#151a22';
+        c.fillRect(sx, sy, miniScale, miniScale);
       }
       if (t === TILE.DOOR) {
-        c.fillStyle = '#8a5a2c';
+        c.fillStyle = '#b8763a';
         const ax = E.maze_door_axis(x, y);
-        if (ax === 0) c.fillRect(x * miniScale, y * miniScale + miniScale / 2 - 1, miniScale, 2);
-        else c.fillRect(x * miniScale + miniScale / 2 - 1, y * miniScale, 2, miniScale);
+        if (ax === 0) c.fillRect(sx, sy + miniScale / 2 - 1, miniScale, 2);
+        else c.fillRect(sx + miniScale / 2 - 1, sy, 2, miniScale);
       }
       if (t === TILE.UP || t === TILE.DOWN) {
-        c.fillStyle = t === TILE.UP ? '#d9c48a' : '#7fb0c8';
-        c.fillRect(x * miniScale + 1, y * miniScale + 1, miniScale - 2, miniScale - 2);
+        c.fillStyle = t === TILE.UP ? '#e2cd92' : '#8cc4dd';
+        c.fillRect(sx + 1, sy + 1, miniScale - 2, miniScale - 2);
       }
-      if (t === TILE.SHRINE) { c.fillStyle = '#e8a13a'; c.fillRect(x * miniScale, y * miniScale, miniScale, miniScale); }
+      if (t === TILE.SHRINE) { c.fillStyle = '#ffc255'; c.fillRect(sx, sy, miniScale, miniScale); }
     }
   }
   // sconces
-  c.fillStyle = '#ffae4d';
+  c.fillStyle = '#ffd08a';
   for (const t of state.torches) c.fillRect(t.x * miniScale + miniScale / 2 - 1, t.y * miniScale + miniScale / 2 - 1, 2, 2);
 }
 
-function drawMinimap() {
-  if (!CFG.minimap || !miniCtx) { miniCanvas.style.display = 'none'; return; }
-  miniCanvas.style.display = 'block';
+/* Punch everything the flame reached this frame into the charted sheet.
+ * Runs only when the kernel actually charted something new, so walking in
+ * circles costs nothing. */
+function revealMinimap() {
+  /* render() already ran maze_mark_seen() this frame and left the count of
+   * newly charted cells behind for us */
+  const fresh = state.seenFresh;
+  state.seenFresh = 0;
+  if (fresh <= 0 && !miniDirty) return;
   const w = miniCanvas.width, h = miniCanvas.height;
-  miniCtx.clearRect(0, 0, w, h);
-  miniCtx.drawImage(miniBase, 0, 0);
-  // fog of war: only charted cells are drawn over the base
-  miniCtx.globalCompositeOperation = 'destination-in';
-  miniCtx.fillStyle = '#fff';
+  const mc = miniMask.getContext('2d');
+  mc.clearRect(0, 0, w, h);
+  mc.fillStyle = '#fff';
   for (let y = 0; y < state.H; y++) {
     const row = y * state.W;
     let runStart = -1;
@@ -1518,35 +1605,117 @@ function drawMinimap() {
       const seen = x < state.W && state.seen[row + x];
       if (seen && runStart < 0) runStart = x;
       if (!seen && runStart >= 0) {
-        miniCtx.fillRect(runStart * miniScale, y * miniScale, (x - runStart) * miniScale, miniScale);
+        mc.fillRect(runStart * miniScale, y * miniScale, (x - runStart) * miniScale, miniScale);
         runStart = -1;
       }
     }
   }
-  miniCtx.globalCompositeOperation = 'source-over';
+  const mem = miniMem.getContext('2d');
+  mem.drawImage(miniBase, 0, 0);
+  mem.globalCompositeOperation = 'destination-in';
+  mem.drawImage(miniMask, 0, 0);
+  mem.globalCompositeOperation = 'source-over';
+  miniDirty = false;
+}
 
-  // torch pools on the map
-  const R = (CFG.playerR + CFG.wallR) * miniScale;
-  const g = miniCtx.createRadialGradient(state.px * miniScale, state.py * miniScale, 0,
-                                         state.px * miniScale, state.py * miniScale, Math.max(6, R));
-  g.addColorStop(0, 'rgba(255,178,84,0.30)');
+/* Re-ink the discovered cells: doors show whether they stand open, stairs and
+ * sconces only appear once you have actually laid eyes on them. */
+function stampMinimapInk() {
+  const w = miniCanvas.width, h = miniCanvas.height;
+  const k = miniInk.getContext('2d');
+  k.clearRect(0, 0, w, h);
+  const E = state.wasm;
+  for (let y = 0; y < state.H; y++) {
+    const row = y * state.W;
+    for (let x = 0; x < state.W; x++) {
+      const id = row + x;
+      if (!state.seen[id]) continue;
+      const t = state.grid[id];
+      const sx = x * miniScale, sy = y * miniScale;
+      if (t === TILE.DOOR) {
+        const open = state.doors[id] > 0;
+        k.fillStyle = open ? '#e8a13a' : '#8a5a2c';
+        if (E.maze_door_axis(x, y) === 0) k.fillRect(sx, sy + miniScale / 2 - 1, miniScale, 2);
+        else k.fillRect(sx + miniScale / 2 - 1, sy, 2, miniScale);
+        if (open) {
+          k.fillStyle = 'rgba(232,161,58,0.28)';
+          k.fillRect(sx, sy, miniScale, miniScale);
+        }
+      } else if (t === TILE.UP || t === TILE.DOWN) {
+        k.fillStyle = t === TILE.UP ? '#d9c48a' : '#7fb0c8';
+        k.fillRect(sx + 1, sy + 1, miniScale - 2, miniScale - 2);
+      } else if (t === TILE.SHRINE) {
+        k.fillStyle = '#e8a13a';
+        k.fillRect(sx, sy, miniScale, miniScale);
+      }
+    }
+  }
+  k.fillStyle = '#ffae4d';
+  for (const t of state.torches) {
+    const cx = (t.wall % state.W) | 0, cy = ((t.wall / state.W) | 0);
+    if (!state.seen[cy * state.W + cx]) continue;
+    k.fillRect(t.x * miniScale + miniScale / 2 - 1, t.y * miniScale + miniScale / 2 - 1, 2, 2);
+  }
+}
+
+let miniStampX = -1;
+
+function drawMinimap() {
+  if (!CFG.minimap || !miniCtx) { if (miniCanvas) miniCanvas.style.display = 'none'; return; }
+  miniCanvas.style.display = 'block';
+  const w = miniCanvas.width, h = miniCanvas.height;
+  const S = miniScale;
+
+  revealMinimap();
+
+  /* the ink sheet only needs re-inking when a door changed state or the map
+   * has advanced past the last cell we inked */
+  let hi = miniStampX;
+  for (let y = 0; y < state.H; y++) {
+    const row = y * state.W;
+    for (let x = 0; x < state.W; x++) if (state.seen[row + x] && row + x > hi) hi = row + x;
+  }
+  if (hi !== miniStampX || state.miniInkDirty) {
+    miniStampX = hi;
+    state.miniInkDirty = false;
+    stampMinimapInk();
+  }
+
+  miniCtx.globalCompositeOperation = 'source-over';
+  /* the unexplored half of the panel is blank parchment, not a window onto
+   * the view — the chart is what you have earned */
+  miniCtx.fillStyle = '#05060a';
+  miniCtx.fillRect(0, 0, w, h);
+  miniCtx.drawImage(miniMem, 0, 0);
+  miniCtx.drawImage(miniInk, 0, 0);
+
+  /* the pool you are standing in reads warmer than the chart behind it, and
+   * 'source-atop' keeps the glow from bleeding into unexplored paper */
+  const px = state.px * S, py = state.py * S;
+  const R = Math.max(6, (CFG.playerR + CFG.wallR) * S);
+  miniCtx.globalCompositeOperation = 'source-atop';
+  const g = miniCtx.createRadialGradient(px, py, 0, px, py, R);
+  g.addColorStop(0, 'rgba(255,178,84,0.34)');
   g.addColorStop(1, 'rgba(255,178,84,0)');
   miniCtx.fillStyle = g;
   miniCtx.beginPath();
-  miniCtx.arc(state.px * miniScale, state.py * miniScale, Math.max(6, R), 0, 7);
+  miniCtx.arc(px, py, R, 0, 7);
   miniCtx.fill();
+  miniCtx.globalCompositeOperation = 'source-over';
 
-  // heading
-  const px = state.px * miniScale, py = state.py * miniScale;
+  // heading — the chart is drawn with x east and y south, and a canvas rotation
+  // runs clockwise on screen, so the yaw goes in unsigned: feeding it negated
+  // mirrors the arrow left-right, which reads as a reversed pointer whenever
+  // you face east or west
   miniCtx.save();
   miniCtx.translate(px, py);
-  miniCtx.rotate(-state.yaw);
+  miniCtx.rotate(state.yaw);
   miniCtx.fillStyle = '#f2e3c2';
   miniCtx.beginPath();
-  miniCtx.moveTo(0, -miniScale * 1.6);
-  miniCtx.lineTo(miniScale * 0.9, miniScale * 1.1);
-  miniCtx.lineTo(0, miniScale * 0.5);
-  miniCtx.lineTo(-miniScale * 0.9, miniScale * 1.1);
+  miniCtx.moveTo(0, -S * 1.6);
+  miniCtx.lineTo(S * 0.9, S * 1.1);
+  miniCtx.lineTo(0, S * 0.5);
+  miniCtx.lineTo(-S * 0.9, S * 1.1);
   miniCtx.closePath();
   miniCtx.fill();
   miniCtx.restore();
@@ -1631,38 +1800,97 @@ function updateHud() {
   p.classList.toggle('on', prompt !== '');
 }
 
-/* ============================================================ settings UI */
+/* ============================================================ settings UI
+ * Each widget carries a plain-language tooltip: what the setting is, what it
+ * actually changes on screen, and when it is worth reaching for. */
 const FIELDS = [
-  ['playerR', 'player torch', 1, 8, 1, 'squares of light around you'],
-  ['wallR', 'wall sconces', 0, 6, 1, 'radius of every wall torch'],
-  ['spacing', 'sconce spacing', 0, 24, 1, 'blocks between wall torches (0 = none)'],
-  ['minGap', 'sconce crowding', 1, 10, 1, 'minimum gap between two sconces'],
-  ['falloff', 'light falloff', 1, 4, 1, '1 linear · 2 torchlight · 3 soft · 4 deep'],
-  ['fov', 'field of view', 45, 110, 1, 'degrees'],
-  ['speed', 'walk speed', 0.8, 5, 0.1, 'squares per second'],
-  ['run', 'run multiplier', 1.1, 2.6, 0.05, ''],
-  ['sens', 'look sensitivity', 0.2, 3, 0.05, ''],
-  ['radius', 'body radius', 0.1, 0.45, 0.01, 'collision clearance'],
-  ['eye', 'eye height', 0.35, 1.0, 0.01, ''],
-  ['fog', 'darkness', 0.2, 2.2, 0.05, ''],
-  ['grain', 'film grain', 0, 0.14, 0.005, ''],
-  ['vignette', 'vignette', 0, 1.2, 0.02, ''],
-  ['resScale', 'render scale', 0.5, 1.6, 0.05, 'internal resolution'],
-  ['cols', 'ray columns', 240, 1280, 20, 'cast rays per frame'],
+  ['playerR', 'player torch', 1, 8, 1, 'squares of light around you',
+   'How far your own flame reaches, counted in squares. Everything outside this ring is pitch black, and it is also how far the engine is willing to trace walls, floor and doors — so this is both your eyesight and your draw distance. Raise it to read a long corridor at a glance; drop it to make the crawl close and claustrophobic.'],
+  ['wallR', 'wall sconces', 0, 6, 1, 'radius of every wall torch',
+   'How far each lamp set into the wall lights the corridor around it. Sconces are the only light besides your own, so this decides how much of the maze stays readable after you have already walked past. Set it to 0 to snuff them all out and rely on your torch alone.'],
+  ['spacing', 'sconce spacing', 0, 24, 1, 'blocks between wall torches (0 = none)',
+   'How many blocks of wall pass between one sconce and the next. Six matches the maze as written — a lamp every six squares. Larger numbers leave longer dark stretches between lamps; 0 removes wall torches entirely.'],
+  ['minGap', 'sconce crowding', 1, 10, 1, 'minimum gap between two sconces',
+   'The least distance two sconces are allowed to keep from each other, so the generator cannot bunch several lamps into one corner. Lower it for denser lighting, raise it for a sparser, darker maze.'],
+  ['falloff', 'light falloff', 1, 4, 1, '1 linear · 2 torchlight · 3 soft · 4 deep',
+   'How quickly brightness dies as you move away from a flame. 1 fades evenly all the way to the edge of the ring; 2 is the default torchlight curve, bright near you and dim at the rim; 3 and 4 hold the light tight around you and then drop off hard. Adjust it when the pool looks too flat, or too dim right at its edge.'],
+  ['fov', 'field of view', 45, 110, 1, 'degrees',
+   'How wide your vision is. A small angle feels like looking through a tube and makes walls seem nearer and taller; a large angle shows more of the room at once but stretches the edges of the image. 72° is a comfortable middle for a corridor crawler.'],
+  ['speed', 'walk speed', 0.8, 5, 0.1, 'squares per second',
+   'How fast you move through the maze. Too slow and a torch pool drifts by before you can read the next turn; too fast and head bob and footsteps start to blur together.'],
+  ['run', 'run multiplier', 1.1, 2.6, 0.05, '',
+   'The multiplier applied while you hold Shift. It only matters once walk speed feels right — raise it for long straight runs, lower it if sprinting overshoots doorways.'],
+  ['sens', 'look sensitivity', 0.2, 3, 0.05, '',
+   'How much the mouse turns your head. Lower it for careful aiming down a passage, raise it if you keep under-turning when something appears behind you.'],
+  ['radius', 'body radius', 0.1, 0.45, 0.01, 'collision clearance',
+   'The invisible cushion around you that keeps you out of stone. Bigger is safer in narrow corridors but you will brush doorways as you pass; smaller lets you hug walls and squeeze closer to a shut door.'],
+  ['eye', 'eye height', 0.35, 1.0, 0.01, '',
+   'How high your eyes sit on the wall. Lower it and the corridor towers over you; raise it and you look down the hallway instead of along it.'],
+  ['fog', 'darkness', 0.2, 2.2, 0.05, '',
+   'How hard the dark swallows distance inside your torch pool. It does not change what gets drawn, only how deep the far end of a lit corridor fades. Raise it for a heavier, closer dark.'],
+  ['grain', 'film grain', 0, 0.14, 0.005, '',
+   'A fine flickering speckle over the whole image, like old film. A little of it hides the flat look of a dimly lit wall; too much makes the torch pool shimmer.'],
+  ['vignette', 'vignette', 0, 1.2, 0.02, '',
+   'Darkens the corners of the screen so your attention stays in the middle of the view. Raise it to tighten the frame, set it to 0 for an even, flat image.'],
+  ['resScale', 'render scale', 0.5, 1.6, 0.05, 'internal resolution',
+   'The size the 3D view is drawn at before it is stretched to your window. Lower it if the frame rate dips — it is the cheapest way to buy speed; raise it for sharper stone at the cost of performance.'],
+  ['cols', 'ray columns', 240, 1280, 20, 'cast rays per frame',
+   'How many rays are traced across the view. Fewer is faster but wall edges start to stair-step and thin doorframes can vanish; more sharpens the image. Only the columns inside your torch pool cost anything.'],
 ];
-const TOGGLES = [['minimap', 'minimap'], ['audio', 'ambience'], ['bob', 'head bob'],
-  ['flicker', 'torch flicker'], ['turnSmooth', 'smooth arrow turn']];
+const TOGGLES = [
+  ['minimap', 'minimap', 'Show the chart that fills in as your torch uncovers the maze. Tab toggles it too.'],
+  ['audio', 'ambience', 'Footsteps, door hinges and room tone. Turn off if the drone is distracting.'],
+  ['bob', 'head bob', 'The gentle sway of your head as you walk. Disable it if it makes you feel uneasy.'],
+  ['flicker', 'torch flicker', 'The live breathing of the flame. Off gives a flat, steady light that is easier to read the maze by.'],
+  ['turnSmooth', 'glide tapped turns', 'On, a tapped arrow key glides through its 20° nudge. Off snaps it instantly. Holding an arrow turns continuously either way.'],
+];
+
+/* one floating bubble, moved to whichever widget you are looking at */
+const tipBox = $('tipbox');
+let tipTimer = 0;
+
+function showTip(anchor, title, body) {
+  clearTimeout(tipTimer);
+  tipBox.innerHTML = '<b>' + title + '</b>' + body;
+  tipBox.classList.add('on');
+  const r = anchor.getBoundingClientRect();
+  const bw = tipBox.offsetWidth, bh = tipBox.offsetHeight;
+  let left = r.left + r.width / 2 - bw / 2;
+  left = Math.max(10, Math.min(window.innerWidth - bw - 10, left));
+  let top = r.bottom + 10;
+  if (top + bh > window.innerHeight - 10) top = Math.max(10, r.top - bh - 10);
+  tipBox.style.left = left + 'px';
+  tipBox.style.top = top + 'px';
+}
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => tipBox.classList.remove('on'), 60);
+}
+
+function attachTip(btn, title, body) {
+  btn.addEventListener('mouseenter', () => showTip(btn, title, body));
+  btn.addEventListener('mouseleave', hideTip);
+  btn.addEventListener('focus', () => showTip(btn, title, body));
+  btn.addEventListener('blur', hideTip);
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (tipBox.classList.contains('on')) hideTip(); else showTip(btn, title, body);
+  });
+}
 
 function buildSettings() {
   const host = $('fields');
   host.innerHTML = '';
-  for (const [key, label, min, max, step, hint] of FIELDS) {
+  for (const [key, label, min, max, step, hint, tip] of FIELDS) {
     const row = document.createElement('div');
     row.className = 'field';
     const val = CFG[key];
-    row.innerHTML = `<label for="f_${key}">${label}
+    row.innerHTML = `<label for="f_${key}"><span>${label}<button class="info" type="button" id="i_${key}"
+        aria-label="what does ${label} do">i</button></span>
         <span class="val" id="v_${key}">${val}</span></label>
-      <input id="f_${key}" type="range" min="${min}" max="${max}" step="${step}" value="${val}">
+      <input id="f_${key}" type="range" min="${min}" max="${max}" step="${step}" value="${val}"
+        title="${label}: ${tip}">
       ${hint ? `<div class="hint">${hint}</div>` : ''}`;
     host.appendChild(row);
     const input = row.querySelector('input');
@@ -1671,17 +1899,22 @@ function buildSettings() {
       $('v_' + key).textContent = CFG[key];
       onConfigChanged(key);
     });
+    attachTip(row.querySelector('.info'), label, tip);
   }
-  for (const [key, label] of TOGGLES) {
+  for (const [key, label, tip] of TOGGLES) {
     const row = document.createElement('div');
     row.className = 'field toggle';
-    row.innerHTML = `<label><input id="t_${key}" type="checkbox" ${CFG[key] ? 'checked' : ''}> ${label}</label>`;
+    row.innerHTML = `<label><input id="t_${key}" type="checkbox" ${CFG[key] ? 'checked' : ''}
+        title="${tip}"> ${label}
+      <button class="info" type="button" id="i_${key}"
+        aria-label="what does ${label} do">i</button></label>`;
     host.appendChild(row);
-    row.querySelector('input').addEventListener('change', (e) => {
+    row.querySelector('input[type=checkbox]').addEventListener('change', (e) => {
       CFG[key] = e.target.checked;
       if (key === 'audio') { if (CFG.audio) { sfx.init(); sfx.resume(); } else if (sfx.ctx) sfx.ctx.suspend(); }
       onConfigChanged(key);
     });
+    attachTip(row.querySelector('.info'), label, tip);
   }
 }
 
@@ -1718,6 +1951,17 @@ let locked = false, started = false;
 function setLocked(v) {
   locked = v;
   $('hud').classList.toggle('paused', !v && started);
+  document.body.classList.toggle('locked', !!v);
+  updateRelockHint();
+}
+
+/* the view is the thing you click to get the mouse back, so say so while the
+ * pointer is loose — but never over a title or settings card */
+function updateRelockHint() {
+  const el = $('relock');
+  if (!el) return;
+  const overlay = !!document.querySelector('.overlay:not(.hidden)');
+  el.classList.toggle('on', started && !locked && !overlay);
 }
 
 window.addEventListener('keydown', (e) => {
@@ -1738,10 +1982,10 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
-  /* arrows turn like a classic crawler, WASD walks.  One press = one turn:
-   * key repeat is swallowed here, and nothing re-fires while a key is held. */
-  if (k === 'arrowleft') { if (!e.repeat) turn(-1); e.preventDefault(); return; }
-  if (k === 'arrowright') { if (!e.repeat) turn(1); e.preventDefault(); return; }
+  /* arrows turn, WASD walks.  A press starts the turn and holding the arrow
+   * keeps it going, exactly like holding W keeps you walking. */
+  if (k === 'arrowleft') { keys.add('arrowleft'); turn(-1); e.preventDefault(); return; }
+  if (k === 'arrowright') { keys.add('arrowright'); turn(1); e.preventDefault(); return; }
   if (k === 'w' || k === 'arrowup') { keys.add('w'); e.preventDefault(); return; }
   if (k === 's' || k === 'arrowdown') { keys.add('s'); e.preventDefault(); return; }
   if (k === 'a') { keys.add('a'); return; }
@@ -1753,17 +1997,18 @@ window.addEventListener('keyup', (e) => {
   if (k === 'shift') keys.delete('shift');
   if (k === 'w' || k === 'arrowup') keys.delete('w');
   if (k === 's' || k === 'arrowdown') keys.delete('s');
+  if (k === 'arrowleft') keys.delete('arrowleft');
+  if (k === 'arrowright') keys.delete('arrowright');
   if (k === 'a') keys.delete('a');
   if (k === 'd') keys.delete('d');
 });
 
-/* One keypress, one 20° turn.  The rotation is never re-applied on its own: a
- * press queues at most one turn, and the queue is drained over a handful of
- * frames purely to keep the motion from snapping.  Holding an arrow does
- * nothing after that single turn. */
-const TURN_STEP = Math.PI / 9;      /* 20° per keypress */
-const TURN_SLIDE = 4;               /* frames the glide is spread over */
-let turnRemain = 0;                 /* radians still owed by the last press */
+/* Turning works like walking: a press starts the motion and holding the key
+ * keeps it going.  A lone tap still lands a crisp 20° nudge so a single press
+ * reads as one turn, and holding the arrow sweeps on at CFG.turnRate. */
+const TURN_STEP = Math.PI / 9;      /* 20° nudge a lone tap lands */
+const TURN_SLIDE = 4;               /* frames the tap's nudge is spread over */
+let turnKick = 0;                   /* radians still owed by the last tap */
 
 function wrapYaw() {
   if (state.yaw > Math.PI) state.yaw -= 2 * Math.PI;
@@ -1771,25 +2016,29 @@ function wrapYaw() {
 }
 
 function turn(dir) {
-  if (!CFG.turnSmooth) {
-    state.yaw += dir * TURN_STEP;
-    wrapYaw();
-    updateBasis();
-    return;
-  }
-  /* bank the turn instead of restarting it, so fast tapping still lands
+  if (!CFG.turnSmooth) return;      /* holding alone is enough in snap mode */
+  /* bank the nudge instead of restarting it, so fast tapping still lands
    * exactly one step per press rather than clipping the previous one */
-  turnRemain = clamp(turnRemain + dir * TURN_STEP, -TURN_STEP, TURN_STEP);
+  turnKick = clamp(turnKick + dir * TURN_STEP, -TURN_STEP, TURN_STEP);
 }
 
-function runTurn() {
-  if (!turnRemain) return;
-  const step = Math.sign(turnRemain) * Math.min(TURN_STEP / TURN_SLIDE, Math.abs(turnRemain));
-  state.yaw += step;
-  wrapYaw();
-  updateBasis();
-  turnRemain -= step;
-  if (Math.abs(turnRemain) < 1e-6) turnRemain = 0;
+function runTurn(dt) {
+  let held = 0;
+  if (keys.has('arrowleft')) held -= 1;
+  if (keys.has('arrowright')) held += 1;
+  if (held) {
+    state.yaw += held * CFG.turnRate * dt;
+    wrapYaw();
+    updateBasis();
+  }
+  if (turnKick) {
+    const step = Math.sign(turnKick) * Math.min(TURN_STEP / TURN_SLIDE, Math.abs(turnKick));
+    state.yaw += step;
+    wrapYaw();
+    updateBasis();
+    turnKick -= step;
+    if (Math.abs(turnKick) < 1e-6) turnKick = 0;
+  }
 }
 
 window.addEventListener('mousemove', (e) => {
@@ -1809,15 +2058,19 @@ function requestLock() {
   } catch (e) { /* older browsers */ }
 }
 
+window.addEventListener('blur', () => updateRelockHint());
+
 /* ============================================================== overlays */
 function openOverlay(which) {
   if (which === 'settings') { $('settings').classList.remove('hidden'); if (locked) document.exitPointerLock(); }
   else { $('title').classList.remove('hidden'); if (locked) document.exitPointerLock(); }
+  updateRelockHint();
 }
 function closeOverlays() {
   $('settings').classList.add('hidden');
-  if (!started) return;
+  if (!started) { updateRelockHint(); return; }
   requestLock();
+  updateRelockHint();
 }
 
 /* ================================================================= boot */
@@ -1828,7 +2081,7 @@ function frame(t) {
   let dt = Math.min(0.05, time - lastT);
   lastT = time;
   if (started && !document.querySelector('.overlay:not(.hidden)')) {
-    runTurn();
+    runTurn(dt);
     move(dt);
     updateDoors(dt);
   }
@@ -1936,6 +2189,7 @@ $('start').addEventListener('click', () => {
   started = true;
   sfx.init(); sfx.resume();
   requestLock();
+  updateRelockHint();
   updateHud();
 });
 $('openSettings').addEventListener('click', () => openOverlay('settings'));
@@ -1946,6 +2200,8 @@ $('resetMap').addEventListener('click', () => {
 $('wipeMap').addEventListener('click', () => {
   state.wasm.maze_forget();
   state.seenTotal = 0;
+  state.seenFresh = 0;
+  resetMinimap();
   toast('charted area cleared', 1600);
 });
 window.addEventListener('resize', resize);
