@@ -276,6 +276,7 @@ function pointerRecaptureTest() {
 function flameTest() {
   const out = { atlasEmbedded: $('torchFlameB64').textContent.trim().length > 1000,
                decoded: !!flameImg, bound: !!texFlame, hasFlame: !!FLAME };
+  out.uprightSampling = VS_SPR.includes('(1.0 - aUV.y)');
   if (!FLAME) { out.ok = false; out.note = 'no flame atlas bound (procedural fallback)'; return out; }
   out.frames = FLAME.frames;
   out.cell = [FLAME.cellW, FLAME.cellH];
@@ -334,8 +335,85 @@ function flameTest() {
   state.px = keep[0]; state.py = keep[1]; state.yaw = keep[2]; updateBasis();
   out.ok = out.decoded && out.bound && out.exactCells && out.minFilter && out.wrapS
     && out.coversAllFrames && out.maxFrameJump === 1 && out.flameCells > 0
-    && Math.abs(ratio - 1) < 0.01;
+    && out.uprightSampling && Math.abs(ratio - 1) < 0.01;
   return out;
+}
+
+function settingsDefaultsTest() {
+  for (const key of Object.keys(DEFAULT_CFG))
+    CFG[key] = typeof DEFAULT_CFG[key] === 'boolean' ? !DEFAULT_CFG[key] : DEFAULT_CFG[key] + 1;
+  $('restoreDefaults').click();
+  const configMatches = Object.keys(DEFAULT_CFG).every(key => CFG[key] === DEFAULT_CFG[key]);
+  const fieldsMatch = FIELDS.every(([key]) => $('f_' + key).value === String(DEFAULT_CFG[key]));
+  const togglesMatch = TOGGLES.every(([key]) => $('t_' + key).checked === !!DEFAULT_CFG[key]);
+  return { configMatches, fieldsMatch, togglesMatch, ok: configMatches && fieldsMatch && togglesMatch };
+}
+
+function renderDistanceTest() {
+  const keep = {
+    px: state.px, py: state.py, torches: state.torches,
+    playerR: CFG.playerR, wallR: CFG.wallR, torchBoost: state.torchBoost,
+  };
+  state.px = 10.5; state.py = 10.5; state.torchBoost = 0;
+  state.torches = [{ ox: 15.5, oy: 10.5 }, { ox: 30.5, oy: 10.5 }];
+  CFG.playerR = 2; CFG.wallR = 3;
+  const withNearbySconce = renderDistance();
+  CFG.wallR = 4;
+  const withLargerSconce = renderDistance();
+  CFG.wallR = 0;
+  const withoutSconces = renderDistance();
+  state.px = keep.px; state.py = keep.py; state.torches = keep.torches;
+  CFG.playerR = keep.playerR; CFG.wallR = keep.wallR; state.torchBoost = keep.torchBoost;
+  return {
+    withNearbySconce: +withNearbySconce.toFixed(2),
+    withLargerSconce: +withLargerSconce.toFixed(2),
+    withoutSconces: +withoutSconces.toFixed(2),
+    ok: withNearbySconce >= 9.39 && withLargerSconce >= 10.39
+      && withLargerSconce > withNearbySconce && withoutSconces === 3.4,
+  };
+}
+
+function radialCastTest() {
+  const cols = 200, maxDist = 5;
+  const keep = [state.px, state.py, state.yaw];
+  let parked = false;
+  for (let y = 1; y < state.H - 1 && !parked; y++) {
+    for (let x = 1; x < state.W - 1 && !parked; x++) {
+      if (state.grid[y * state.W + x] === TILE.WALL || state.grid[y * state.W + x] === TILE.DOOR) continue;
+      for (let k = 0; k < 4; k++) {
+        if (!state.wasm.maze_solid(x + DXF[k], y + DYF[k])) continue;
+        state.px = x + 0.5; state.py = y + 0.5;
+        state.yaw = Math.atan2(DXF[k], -DYF[k]);
+        updateBasis();
+        parked = true;
+        break;
+      }
+    }
+  }
+  const [planeX, planeY] = cameraPlane();
+  const aspect = viewW / viewH;
+  const horizontalExtent = planeX * rightX + planeY * rightY;
+  const leftEdgeNdc = -horizontalExtent / (aspect * tanHalf);
+  const rightEdgeNdc = horizontalExtent / (aspect * tanHalf);
+  const castHits = state.wasm.maze_cast(state.px, state.py, dirX, dirY, planeX, planeY, cols, maxDist);
+  let maxHitDistance = 0, hits = 0;
+  for (let c = 0; c < cols; c++) {
+    const depth = state.rays[c * 8];
+    if (!(depth > 0)) continue;
+    const camX = 2 * c / cols - 1;
+    const rayX = dirX + planeX * camX;
+    const rayY = dirY + planeY * camX;
+    maxHitDistance = Math.max(maxHitDistance, depth * Math.hypot(rayX, rayY));
+    hits++;
+  }
+  state.px = keep[0]; state.py = keep[1]; state.yaw = keep[2]; updateBasis();
+  const edgeCoverage = Math.abs(leftEdgeNdc + 1) < 1e-6 && Math.abs(rightEdgeNdc - 1) < 1e-6;
+  return {
+    parked, castHits, hits, maxHitDistance: +maxHitDistance.toFixed(3),
+    edgeNdc: [+leftEdgeNdc.toFixed(3), +rightEdgeNdc.toFixed(3)],
+    edgeCoverage,
+    ok: parked && castHits === hits && hits > 0 && maxHitDistance <= maxDist + 0.001 && edgeCoverage,
+  };
 }
 
 /* every Torch & sight widget has to carry a plain-language tooltip */
@@ -519,6 +597,9 @@ window.addEventListener('load', async () => {
     window.__diag.pointer = pointerRecaptureTest();
     window.__diag.tooltips = tooltipTest();
     window.__diag.flame = flameTest();
+    window.__diag.settingsDefaults = settingsDefaultsTest();
+    window.__diag.renderDistance = renderDistanceTest();
+    window.__diag.radialCast = radialCastTest();
     // open a door ahead if there is one
     window.__diag.miniInkBefore = miniInkPixels();
     const hit = tryInteract();
@@ -556,6 +637,9 @@ window.addEventListener('load', async () => {
   r.pointer = window.__diag.pointer;
   r.tooltips = window.__diag.tooltips;
   r.flame = window.__diag.flame;
+  r.settingsDefaults = window.__diag.settingsDefaults;
+  r.renderDistance = window.__diag.renderDistance;
+  r.radialCast = window.__diag.radialCast;
   r.interacted = window.__diag.interacted;
   document.getElementById('diagjson').textContent = JSON.stringify(r);
   document.title = 'DIAG ' + JSON.stringify(r);

@@ -17,11 +17,10 @@
  *      seen[]      fog-of-war memory
  *      rays[]      per-column DDA results    -> uploaded straight to WebGL2
  *
- *  The DDA traversal terminates as soon as a ray leaves the configured
- *  torchlight reach, so the number of cells actually visited per frame is
- *  bounded by the light radius, not by the map size.  The light pass likewise
- *  only ever visits sub-cells inside the union of the torch pools (tracked in
- *  a touched list), so clearing it costs nothing when the pool is small.
+ *  The DDA traversal terminates at the configured radial render distance, so
+ *  the number of cells actually visited per frame is bounded by the nearby
+ *  torch pools, not by the map size. The light pass likewise only visits
+ *  sub-cells inside the union of the torch pools (tracked in a touched list).
  *
  *  The lightmap is stored at LMS x LMS sub-cells per map cell so the falloff
  *  reads as a smooth gradient instead of a blocky per-cell step, while
@@ -509,6 +508,7 @@ int maze_cast(float px, float py,
         float camX = (float)c * invCols - 1.0f;
         float rdx  = dirX + planeX * camX;
         float rdy  = dirY + planeY * camX;
+        float rayLen = __builtin_sqrtf(rdx * rdx + rdy * rdy);
 
         int mapX = (int)px, mapY = (int)py;
 
@@ -532,9 +532,9 @@ int maze_cast(float px, float py,
             if (sideDistX < sideDistY) { entry = sideDistX; sideDistX += deltaX; mapX += stepX; side = 0; }
             else                       { entry = sideDistY; sideDistY += deltaY; mapY += stepY; side = 1; }
 
-            /* torchlight budget: stop the moment the ray leaves the pool */
+            /* maxDist is radial distance, not the unnormalised ray parameter. */
             float cand = (side == 0) ? (sideDistX - deltaX) : (sideDistY - deltaY);
-            if (cand > maxDist) break;
+            if (cand * rayLen > maxDist) break;
 
             if (!inside(mapX, mapY)) break;
 
