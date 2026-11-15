@@ -9,3 +9,8 @@
 
 [x] add tooltips to Torch and Sight setting widgets to explain in simple terms what each setting is for, what it controls and when to adjust it.
     -> every Torch & sight widget (16 sliders + 5 toggles) has an ⓘ button opening a plain-language bubble (`#tipbox`, hover / focus / click, clamped to the viewport) plus a native `title` on the control itself. Harness: 21 of 21 widgets carry a tooltip of 60+ characters.
+
+[x] Add note to main screen about settings page when esc is hit
+    -> the relock banner is now two lines: "click the view to take back the mouse" plus "or press Esc again for torch settings" (the first Esc only frees the pointer, the second reaches the keydown handler and opens the card). A clickable `#gear` "⚙ settings" button sits at the right end of the HUD bar and opens the same card. Both are driven by `updateRelockHint()`, so they show only while the run has started, the cursor is loose and no card is open — while locked the OS cursor is hidden, so an on-screen button would be unaimable. `#hud` is `pointer-events:none`, so `#gear` re-enables it (`pointer-events:auto` when `.on`). Harness `pointer` test: hintWhenUnlocked, gearWhenUnlocked, gearClickableWhenUnlocked, gearOpensSettings, gearHiddenWhileLocked, gearInOverlay, hintMentionsEsc.
+
+[ ] Add model for torch

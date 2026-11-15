@@ -190,15 +190,24 @@ function miniHeadingTest() {
   return out;
 }
 
-/* clicking the view must reclaim the pointer, but not while a card is open */
+/* clicking the view must reclaim the pointer, but not while a card is open.
+ * The Esc hint and the gear button share that window: they must appear while the
+ * cursor is loose, hide again once it is captured, and never sit under a card. */
 function pointerRecaptureTest() {
   let calls = 0;
   const orig = canvas.requestPointerLock;
   canvas.requestPointerLock = function () { calls++; return undefined; };
   const hint = () => document.getElementById('relock').classList.contains('on');
+  const gear = () => document.getElementById('gear');
+  const gearOn = () => gear().classList.contains('on');
+  /* #hud is pointer-events:none, so the gear has to opt itself back in */
+  const gearClickable = () => getComputedStyle(gear()).pointerEvents === 'auto';
 
   setLocked(false);                       // pretend the browser handed the cursor back
   const hintWhenUnlocked = hint();
+  const gearWhenUnlocked = gearOn();
+  const gearClickableWhenUnlocked = gearClickable();
+  const hintMentionsEsc = /esc/i.test(document.getElementById('relock').textContent);
   canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
   const clickRecaptures = calls > 0;
 
@@ -207,10 +216,22 @@ function pointerRecaptureTest() {
   canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
   const blockedInOverlay = calls === before;
   const hintInOverlay = hint();
+  const gearInOverlay = gearOn();
+  closeOverlays();
+
+  /* the gear is the mouse-free route to the settings card */
+  setLocked(false);
+  gear().click();
+  const gearOpensSettings = !document.getElementById('settings').classList.contains('hidden');
+  const gearHiddenWhileLocked = (() => { setLocked(true); const v = !gearOn(); setLocked(false); return v; })();
   closeOverlays();
 
   canvas.requestPointerLock = orig;
-  return { clickRecaptures, blockedInOverlay, hintWhenUnlocked, hintInOverlay };
+  return {
+    clickRecaptures, blockedInOverlay, hintWhenUnlocked, hintInOverlay,
+    hintMentionsEsc, gearWhenUnlocked, gearClickableWhenUnlocked,
+    gearInOverlay, gearOpensSettings, gearHiddenWhileLocked,
+  };
 }
 
 /* every Torch & sight widget has to carry a plain-language tooltip */

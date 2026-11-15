@@ -96,12 +96,27 @@
   #prompt.on{opacity:1}
   #relock{
     position:absolute;left:50%;top:56%;transform:translate(-50%,-6px);
+    display:flex;flex-direction:column;align-items:center;gap:6px;
     font-size:12px;letter-spacing:.24em;text-transform:uppercase;
     padding:9px 18px;border:1px solid rgba(232,163,61,.42);background:rgba(0,0,0,.58);
     color:var(--amber);opacity:0;transition:opacity .25s;white-space:nowrap;
     backdrop-filter:blur(6px);
   }
   #relock.on{opacity:1}
+  #relock .sub{font-size:10.5px;letter-spacing:.2em;color:var(--bone-dim)}
+  #relock .sub b{color:var(--bone);font-weight:600}
+  /* the settings card is also reachable by clicking, but only while the cursor
+   * is ours — #hud is pointer-events:none, so this has to opt itself back in */
+  #gear{
+    pointer-events:none;visibility:hidden;opacity:0;transition:opacity .25s;
+    font-size:10.5px;letter-spacing:.22em;padding:6px 12px;
+    border:1px solid rgba(232,163,61,.42);background:rgba(0,0,0,.55);
+  }
+  #gear.on{pointer-events:auto;visibility:visible;opacity:1}
+  #gear:hover,#gear:focus{
+    outline:none;border-color:var(--amber);color:var(--amber);
+    background:rgba(232,163,61,.14);box-shadow:0 0 22px rgba(232,163,61,.22);
+  }
   #toast{
     position:absolute;left:50%;top:22%;transform:translate(-50%,-8px);
     font-size:19px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber);
@@ -222,10 +237,14 @@
     <div class="spacer"></div>
     <div class="compass"><div id="compassTicks"></div><div class="needle" id="needle"></div><div class="lbl" id="cardinal">N</div></div>
     <div class="stat"><b id="sFps">60</b> fps</div>
+    <button id="gear" type="button" title="Torch &amp; sight settings — or press Esc">&#9881; settings</button>
   </div>
   <div id="toast"></div>
   <div id="prompt"></div>
-  <div id="relock">click the view to take back the mouse</div>
+  <div id="relock">
+    <span>click the view to take back the mouse</span>
+    <span class="sub">or press <b>Esc</b> again for torch settings</span>
+  </div>
   <div class="hud-bottom">
     <div class="torch-meter">
       <div class="cap">Flame reach</div>
@@ -270,6 +289,8 @@
       WASM raycast + lighting kernel, WebGL2 renderer. Maps up to 256×256.
       Keyboard &amp; mouse: <b>WASD</b> move, <b>&larr; &rarr;</b> turn (hold to keep turning),
       <b>mouse</b> look, <b>E</b> doors/shrines, <b>F</b> stairs, <b>Esc</b> settings.
+      While the mouse is captured, the first <b>Esc</b> only frees it &mdash; press it
+      <b>again</b> for the settings card, or click the <b>&#9881; settings</b> button in the HUD.
     </div>
     <div class="err" id="bootErr"></div>
   </div>
@@ -287,7 +308,8 @@
       <div><kbd>F</kbd> take the stairs</div>
       <div><kbd>&larr;</kbd><kbd>&rarr;</kbd> turn &mdash; hold to keep turning</div>
       <div><kbd>Tab</kbd> map</div>
-      <div><kbd>Esc</kbd> settings</div>
+      <div><kbd>Esc</kbd> settings &mdash; press twice while looking (the first frees the mouse)</div>
+      <div><kbd>&#9881; settings</kbd> button in the HUD, shown whenever the cursor is free</div>
     </div>
     <div class="row">
       <button id="closeSettings">Resume</button>
@@ -1956,12 +1978,17 @@ function setLocked(v) {
 }
 
 /* the view is the thing you click to get the mouse back, so say so while the
- * pointer is loose — but never over a title or settings card */
+ * pointer is loose — but never over a title or settings card.  The gear rides
+ * along with it: while the pointer is captured the OS cursor is hidden, so a
+ * settings button on screen would be one you cannot aim at. */
 function updateRelockHint() {
   const el = $('relock');
   if (!el) return;
   const overlay = !!document.querySelector('.overlay:not(.hidden)');
-  el.classList.toggle('on', started && !locked && !overlay);
+  const show = started && !locked && !overlay;
+  el.classList.toggle('on', show);
+  const gear = $('gear');
+  if (gear) gear.classList.toggle('on', show);
 }
 
 window.addEventListener('keydown', (e) => {
@@ -2193,6 +2220,7 @@ $('start').addEventListener('click', () => {
   updateHud();
 });
 $('openSettings').addEventListener('click', () => openOverlay('settings'));
+$('gear').addEventListener('click', () => openOverlay('settings'));
 $('closeSettings').addEventListener('click', () => { $('settings').classList.add('hidden'); if (started) requestLock(); });
 $('resetMap').addEventListener('click', () => {
   if (state.mapText) { loadMap(state.mapText, state.mapName); toast('map re-seeded', 1600); }
