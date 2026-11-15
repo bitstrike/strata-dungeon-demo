@@ -22,6 +22,15 @@ window.addEventListener('error', (e) => window.__diag.errors.push('pageerror: ' 
 window.addEventListener('unhandledrejection', (e) => window.__diag.errors.push('rejection: ' + (e.reason && e.reason.message || e.reason)));
 const _ce = console.error;
 console.error = function (...a) { window.__diag.errors.push('console: ' + a.map(String).join(' ')); _ce.apply(console, a); };
+/* state.fps is produced by the requestAnimationFrame loop, and headless chromium
+ * does not tick rAF on wall-clock time — so count the loop's own callbacks and
+ * measure them over a window instead of trusting the HUD number. */
+window.__rafCount = 0;
+const _raf = window.requestAnimationFrame.bind(window);
+window.requestAnimationFrame = function (cb) {
+  window.__rafCount++;
+  return _raf(cb);
+};
 </script>
 `;
 
@@ -44,11 +53,13 @@ function diagReport() {
     seen: state.wasm ? state.wasm.maze_seen_count() : 0,
     minimap: miniRevealStats(),
     litSubCells: state.wasm ? state.wasm.maze_compute_light(state.px, state.py, CFG.playerR, CFG.wallR) : 0,
-    meshes: { wall: mWall.n / 8, floor: mFloor.n / 8, ceil: mCeil.n / 8, door: mDoor.n / 8, leaves: mLeaves.n / 8, sprite: mSprite.n / 6 },
+    meshes: { wall: mWall.n / 8, floor: mFloor.n / 8, ceil: mCeil.n / 8, door: mDoor.n / 8, leaves: mLeaves.n / 8, sconce: mSconce.n / 8, sprite: mSprite.n / 7 },
+    flame: { bound: !!texFlame, frames: FLAME_COLS, cell: FLAME ? FLAME.cellW + 'x' + FLAME.cellH : 'none', atlas: FLAME ? FLAME.w + 'x' + FLAME.h : 'none', b64len: document.getElementById('torchFlameB64').textContent.trim().length },
     glError: glErr,
     glOk: !!gl,
     view: viewW + 'x' + viewH,
     fps: state.fps,
+    loop: window.__diag.loop,
     started: started,
     bootErr: document.getElementById('bootErr').textContent,
     b64len: document.getElementById('mazeWasmB64').textContent.trim().length,
@@ -105,18 +116,42 @@ function miniInkPixels() {
 /* toggle a charted door and confirm the minimap re-inks it */
 function miniDoorInkTest() {
   const E = state.wasm;
-  let id = -1;
-  for (let i = 0; i < state.W * state.H && id < 0; i++) {
-    if (state.grid[i] === TILE.DOOR && state.seen[i]) id = i;
+  /* updateDoors only animates a door within the built window, so a charted door
+   * on the other side of the map is not enough — park beside the nearest one.
+   * (The sconce test leaves the player in front of a bracket, which is often
+   * nowhere near the first charted door the scan finds.) */
+  const half = CFG.playerR + CFG.wallR + 2;
+  const inRange = (x, y) => Math.abs(x - (state.px | 0)) <= half - 1 && Math.abs(y - (state.py | 0)) <= half - 1;
+  const doors = [];
+  for (let i = 0; i < state.W * state.H; i++) {
+    if (state.grid[i] !== TILE.DOOR || !state.seen[i]) continue;
+    const x = i % state.W, y = (i / state.W) | 0;
+    doors.push({ i, x, y, d: Math.hypot(x + 0.5 - state.px, y + 0.5 - state.py) });
   }
-  if (id < 0) return { error: 'no charted door' };
-  const x = id % state.W, y = (id / state.W) | 0;
+  if (!doors.length) return { error: 'no charted door' };
+  doors.sort((a, b) => a.d - b.d);
+  const pick = doors.find(d => inRange(d.x, d.y)) || doors[0];
+  const id = pick.i, x = pick.x, y = pick.y;
+  const keep = [state.px, state.py, state.yaw];
+  const parked = !inRange(x, y);
+  if (parked) {
+    /* stand in the open cell next to the door and face it */
+    let ox = x + 1, oy = y;
+    for (let k = 0; k < 4; k++) {
+      if (!state.wasm.maze_solid(x + DXF[k], y + DYF[k])) { ox = x + DXF[k]; oy = y + DYF[k]; break; }
+    }
+    state.px = ox + 0.5; state.py = oy + 0.5;
+    state.yaw = Math.atan2(x + 0.5 - state.px, -(y + 0.5 - state.py));
+    updateBasis();
+  }
   const wasOpen = state.doors[id] > 0;
   state.doorTarget.set(id, wasOpen ? 0 : 1);
   for (let i = 0; i < 120; i++) { updateDoors(1 / 60); drawMinimap(); }
   const nowOpen = state.doors[id] > 0;
+  state.px = keep[0]; state.py = keep[1]; state.yaw = keep[2]; updateBasis();
   return {
     cell: [x, y],
+    walked: parked,
     wasOpen, nowOpen,
     toggled: wasOpen !== nowOpen,
     inkBefore: window.__diag.miniInkBefore,
@@ -234,6 +269,75 @@ function pointerRecaptureTest() {
   };
 }
 
+/* the baked flame filmstrip: it must decode, bind without mipmaps, divide into
+ * exactly FLAME_COLS cells, and actually drive the sprite pass.  The pingpong
+ * frame walk is what stops the flicker snapping from the tallest frame back to
+ * the shortest, so it is checked for both coverage and continuity. */
+function flameTest() {
+  const out = { atlasEmbedded: $('torchFlameB64').textContent.trim().length > 1000,
+               decoded: !!flameImg, bound: !!texFlame, hasFlame: !!FLAME };
+  if (!FLAME) { out.ok = false; out.note = 'no flame atlas bound (procedural fallback)'; return out; }
+  out.frames = FLAME.frames;
+  out.cell = [FLAME.cellW, FLAME.cellH];
+  out.atlas = [FLAME.w, FLAME.h];
+  out.exactCells = FLAME.w % FLAME.cols === 0 && FLAME.h === FLAME.cellH;
+  out.cellAspect = +FLAME.aspect.toFixed(3);
+  /* mipmaps on a filmstrip bleed neighbouring frames into each other */
+  gl.bindTexture(gl.TEXTURE_2D, texFlame);
+  out.minFilter = gl.getTexParameter(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER) === gl.LINEAR;
+  out.wrapS = gl.getTexParameter(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S) === gl.CLAMP_TO_EDGE;
+  /* the frame sequence: every cell used, and no jump bigger than one step */
+  const seq = [];
+  for (let i = 0; i < FLAME_CYCLE; i++) seq.push(flameFrame(i / FLAME_FPS, 0));
+  out.seq = seq;
+  out.coversAllFrames = new Set(seq).size === FLAME_COLS;
+  let maxJump = 0;
+  for (let i = 1; i < seq.length; i++) maxJump = Math.max(maxJump, Math.abs(seq[i] - seq[i - 1]));
+  out.maxFrameJump = maxJump;
+  /* a phase offset must not change which frames are reachable */
+  out.phasedCoversAll = new Set(Array.from({ length: FLAME_CYCLE }, (_, i) => flameFrame(i / FLAME_FPS, 0.37))).size === FLAME_COLS;
+  /* drive the sprite pass and confirm a torch flame really sampled a cell */
+  const t = state.torches[0];
+  const keep = [state.px, state.py, state.yaw];
+  state.px = t.ox - DXF[t.face] * 0.9; state.py = t.oy - DYF[t.face] * 0.9;
+  state.yaw = Math.atan2(DXF[t.face], -DYF[t.face]);
+  updateBasis();
+  buildSprites(1.0);
+  const cells = [];
+  for (let i = 6; i < mSprite.n; i += 7) cells.push(mSprite.a[i]);
+  out.spriteVerts = mSprite.n / 7;
+  out.flameCells = cells.filter(c => c >= 0).length;
+  out.blobQuads = cells.filter(c => c < 0).length;
+  /* the flame quad's half-width must follow the cell aspect, not stay square.
+   * The quad is pushed in VIEW space, where perspective shrinks the horizontal
+   * spread by the projection factor, so compare the ratio of the two spreads
+   * against the ratio the mesh was given — that is what the shader samples. */
+  /* the flame quad's width must follow the cell aspect, not stay square.  Walk
+   * whole quads (6 vertices) so a neighbour's extent is never mixed in, and
+   * measure inside the quad's own view-space box. */
+  let halfH = 0, halfW = 0;
+  for (let q = 0; q * 42 < mSprite.n; q++) {
+    const b = q * 42;
+    if (b + 42 > mSprite.n || mSprite.a[b + 6] < 0) continue;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let v = 0; v < 6; v++) {
+      x0 = Math.min(x0, mSprite.a[b + v * 7]); x1 = Math.max(x1, mSprite.a[b + v * 7]);
+      y0 = Math.min(y0, mSprite.a[b + v * 7 + 1]); y1 = Math.max(y1, mSprite.a[b + v * 7 + 1]);
+    }
+    halfW = Math.max(halfW, (x1 - x0) / 2);
+    halfH = Math.max(halfH, (y1 - y0) / 2);
+  }
+  out.quadAspect = halfH ? +(halfW / halfH).toFixed(3) : 0;
+  out.expectAspect = +FLAME.aspect.toFixed(3);
+  const ratio = out.quadAspect / FLAME.aspect;
+  out.aspectRatio = +ratio.toFixed(3);
+  state.px = keep[0]; state.py = keep[1]; state.yaw = keep[2]; updateBasis();
+  out.ok = out.decoded && out.bound && out.exactCells && out.minFilter && out.wrapS
+    && out.coversAllFrames && out.maxFrameJump === 1 && out.flameCells > 0
+    && Math.abs(ratio - 1) < 0.01;
+  return out;
+}
+
 /* every Torch & sight widget has to carry a plain-language tooltip */
 function tooltipTest() {
   const rows = Array.from(document.querySelectorAll('#fields .field'));
@@ -256,6 +360,13 @@ window.addEventListener('load', async () => {
       try { D.steps.push('acquireWasm api ' + await acquireWasm()); }
       catch (e) { D.steps.push('acquireWasm threw: ' + e.message); }
     }
+    /* boot() decodes the flame filmstrip before it calls initGL(). If the
+     * harness reaches initGL first, texFlame is never bound — so wait for that
+     * decode to settle (it always settles: success or a caught failure) rather
+     * than racing it. */
+    for (let i = 0; i < 120 && !bootFlameSettled; i++) await new Promise(r => setTimeout(r, 25));
+    D.steps.push('flame decode ' + (bootFlameSettled ? 'settled' : 'TIMED OUT')
+                 + ' img=' + (flameImg ? flameImg.width + 'x' + flameImg.height : 'none'));
     if (!gl) {
       try { initGL(); D.steps.push('initGL ok'); } catch (e) { D.steps.push('initGL threw: ' + e.message); }
     }
@@ -327,6 +438,45 @@ window.addEventListener('load', async () => {
       after: [state.px.toFixed(2), state.py.toFixed(2)],
       insideWall: !!state.wasm.maze_solid(state.px | 0, state.py | 0),
     };
+    /* the sconce model: park the player in front of a lit bracket, look at it
+     * and confirm solid geometry, its texture and the flame all draw */
+    {
+      const pcx = state.px | 0, pcy = state.py | 0;
+      let pick = null;
+      for (const t of state.torches) {
+        if (!state.wasm.maze_can_see(pcx, pcy, t.open % state.W, (t.open / state.W) | 0)) continue;
+        const d = Math.hypot(t.ox - state.px, t.oy - state.py);
+        if (!pick || d < pick.d) pick = { t, d };
+      }
+      const out = { };
+      if (pick) {
+        const t = pick.t;
+        state.px = t.ox - DXF[t.face] * 0.35;
+        state.py = t.oy - DYF[t.face] * 0.35;
+        /* look back into the wall the bracket is bolted to: dir = (sin yaw, -cos yaw)
+         * has to point along DXF/DYF, i.e. from the open cell into the masonry */
+        state.yaw = Math.atan2(DXF[t.face], -DYF[t.face]);
+        updateBasis();
+        render(1.234);
+        const verts = mSconce.n / 8;
+        out.face = t.face;
+        out.dist = +pick.d.toFixed(2);
+        out.verts = verts;
+        out.quads = verts / 6;
+        out.parts = SCONCE.length;
+        out.textured = !!texIron;
+        out.flameSprites = mSprite.n / 7;
+        out.ok = verts > 0 && texIron && mSprite.n > 0;
+        /* the bracket has to sit in front of the wall it is bolted to */
+        let minDepth = Infinity;
+        for (let i = 2; i < mSconce.n; i += 8) if (mSconce.a[i] < minDepth) minDepth = mSconce.a[i];
+        out.minDepth = +minDepth.toFixed(3);
+        out.inFront = minDepth > 0.02;
+      } else {
+        out.error = 'no visible sconce';
+      }
+      window.__diag.sconceTest = out;
+    }
     /* turning: a lone tap lands one readable 20° nudge, holding the arrow keeps
      * sweeping like holding W keeps you walking, and releasing stops it dead */
     {
@@ -368,27 +518,44 @@ window.addEventListener('load', async () => {
     window.__diag.miniHeading = miniHeadingTest();
     window.__diag.pointer = pointerRecaptureTest();
     window.__diag.tooltips = tooltipTest();
+    window.__diag.flame = flameTest();
     // open a door ahead if there is one
     window.__diag.miniInkBefore = miniInkPixels();
     const hit = tryInteract();
     window.__diag.interacted = hit;
     for (let i = 0; i < 120; i++) { updateDoors(1 / 60); drawMinimap(); }
     window.__diag.miniDoor = miniDoorInkTest();
-    window.__diag.frames = state.fps;
+    /* everything above is one long synchronous block, which starves the
+     * requestAnimationFrame loop.  Hand control back and measure how fast the
+     * real game loop actually runs, rather than reading the HUD counter. */
+    const raf0 = window.__rafCount, t0 = performance.now();
+    await new Promise(r => setTimeout(r, 900));
+    const rafDt = (performance.now() - t0) / 1000;
+    const rafFrames = window.__rafCount - raf0;
+    window.__diag.loop = {
+      rafFrames, rafSeconds: +rafDt.toFixed(3),
+      rafFps: rafDt > 0 ? Math.round(rafFrames / rafDt) : 0,
+      hudFps: state.fps,
+    };
+    window.__diag.frames = rafFrames;
     // render a few real frames so GL errors surface
     for (let i = 0; i < 5; i++) { render(performance.now() / 1000 + i * 0.1); drawMinimap(); updateHud(); }
+    /* leave the view parked on the sconce so the screenshot shows the bracket */
+    if (window.__diag.sconceTest && !window.__diag.sconceTest.error) render(performance.now() / 1000 + 0.5);
   } catch (e) {
     window.__diag.errors.push('harness: ' + (e && e.stack ? e.stack.split('\\n')[0] : e));
   }
   const r = diagReport();
   r.wallTest = window.__diag.wallTest;
   r.turnTest = window.__diag.turnTest;
+  r.sconceTest = window.__diag.sconceTest;
   r.miniBefore = window.__diag.miniBefore;
   r.miniAfter = window.__diag.miniAfter;
   r.miniDoor = window.__diag.miniDoor;
   r.miniHeading = window.__diag.miniHeading;
   r.pointer = window.__diag.pointer;
   r.tooltips = window.__diag.tooltips;
+  r.flame = window.__diag.flame;
   r.interacted = window.__diag.interacted;
   document.getElementById('diagjson').textContent = JSON.stringify(r);
   document.title = 'DIAG ' + JSON.stringify(r);
