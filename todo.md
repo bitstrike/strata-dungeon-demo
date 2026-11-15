@@ -34,4 +34,4 @@
 [x] When viewing a wall or door at an angle, the leftmost and rightmost wall/door/objects are sometimes not drawn resulting in a black or transparent space. This is incorrect. When close enough to an object to observe it, the surfaces of the nearest objects in view should be visible to the player.
     -> The projection uses a vertical FOV, but the ray caster's horizontal camera plane omitted the viewport aspect ratio, so the rays covered only the middle of a wide screen. `cameraPlane()` now applies the aspect ratio consistently to ray casting and wall-face construction. The headless radial-cast check verifies projected edge rays land at NDC -1 and +1.
 
-[ ] occaisionally, a torch sprite frame stays visible when panning the view left/right.
+[x] occasionally, a torch sprite frame stays visible when panning the view left/right.
