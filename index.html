@@ -499,9 +499,10 @@ async function acquireFlame() {
  * tallest flame back to the shortest on every wrap.  The per-torch phase keeps
  * a corridor of brackets from pulsing in lockstep. */
 function flameFrame(time, phase) {
-  let k = Math.floor(time * FLAME_FPS + phase) % FLAME_CYCLE;
-  if (k < 0) k += FLAME_CYCLE;
-  return k < FLAME_COLS ? k : FLAME_CYCLE - k;
+  const raw = (time * FLAME_FPS + phase) % FLAME_CYCLE;
+  const k = raw < 0 ? raw + FLAME_CYCLE : raw;
+  const cell = Math.trunc(k);
+  return cell < FLAME_COLS ? cell : FLAME_CYCLE - cell;
 }
 
 /* Bind JS views directly onto wasm linear memory: no copies, ever. */
@@ -968,9 +969,10 @@ uniform vec2 uCell;                 // one cell, in atlas UV units
 out vec2 vUV; out float vInt; out float vCell; out vec2 vAtlas;
 void main() {
   float d = aPos.z;
-  vUV = aUV; vInt = aInt; vCell = aCell;
+  vec2 uv = clamp(aUV, vec2(0.0), vec2(1.0));
+  vUV = uv; vInt = aInt; vCell = aCell;
   /* the strip is a single row; flip v so the image tip stays at the quad's top */
-  vAtlas = vec2((mod(aCell, uCols) + aUV.x) * uCell.x, (1.0 - aUV.y) * uCell.y);
+  vAtlas = vec2((mod(aCell, uCols) + uv.x) * uCell.x, (1.0 - uv.y) * uCell.y);
   float zc = ((uFar + uNear) * d - 2.0 * uFar * uNear) / (uFar - uNear);
   gl_Position = vec4(aPos.x * uF / uAspect, aPos.y * uF, zc, d);
 }`;
@@ -1605,7 +1607,7 @@ function render(time) {
     gl.bindVertexArray(vaoSprite);
     gl.bindBuffer(gl.ARRAY_BUFFER, _bufSprite);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, mSprite.view());
-    gl.drawArrays(gl.TRIANGLES, 0, mSprite.n / 6);
+    gl.drawArrays(gl.TRIANGLES, 0, mSprite.n / 7);
   }
   gl.depthMask(true);
   gl.disable(gl.BLEND);
